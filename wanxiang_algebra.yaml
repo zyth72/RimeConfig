@@ -38,6 +38,8 @@ base:
       - xform/^(.*)m̀(.*)(;.*)$/$1m$2④$3/
       - xlit/①②③④/7890
       - derive/^ng(\d)$/eng$1/
+      - abbrev/^ng(\d)$/ng/
+      - erase/^ng(\d)$/
       - xform/^n(\d)/en$1/
       - xform/^m(\d)(;.*)/me$1$2/
       - abbrev/^([zcs]h).+$/$1/                        #zh ch sh作为整体

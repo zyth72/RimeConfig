@@ -63,6 +63,12 @@ super_replacer:
         files:
           - lua/data/TWVariants.txt
           - lua/data/TWVariantsRevPhrases.txt
+      - option: [ abbrev_lazy, abbrev_always ] 
+        mode: abbrev          # <--- 新增的简码模式
+        tags: [abc]
+        prefix: "_abbr_"
+        files:
+          - lua/data/abbrev.txt # 格式：zm\t怎么|在吗
 ]]
 
 local M = {}
@@ -76,6 +82,7 @@ local s_format = string.format
 local s_byte = string.byte
 local s_sub = string.sub
 local s_gsub = string.gsub
+local s_upper = string.upper
 local open = io.open
 local type = type
 local tonumber = tonumber
@@ -310,7 +317,7 @@ function M.init(env)
         end
     end
 
-    -- 3. DB 初始化 (后面逻辑保持不变)
+    -- 3. DB 初始化
     if not userdb then return end
     local ok, db = pcall(function() local d = userdb.LevelDb(db_name); d:open(); return d end)
 
@@ -340,6 +347,7 @@ function M.fini(env)
     if env.db then env.db:close(); env.db = nil end
 end
 
+-- [Core Function] 核心逻辑
 function M.func(input, env)
     if not env.types or #env.types == 0 or not env.db then
         for cand in input:iter() do yield(cand) end
@@ -352,11 +360,17 @@ function M.func(input, env)
     local split_pat = env.split_pattern
     local comment_fmt = env.comment_format
     local is_chain = env.chain
+    local input_code = ctx.input
+
+    local input_type = "unknown"
+    if wanxiang and wanxiang.get_input_method_type then
+        input_type = wanxiang.get_input_method_type(env)
+    end
 
     local seg = ctx.composition:back()
     local current_seg_tags = seg and seg.tags or {}
-
-    for cand in input:iter() do
+    -- [Helper] 通用处理函数
+    local function process_rules(cand)
         local current_text = cand.text
         local show_main = true 
         local current_main_comment = cand.comment 
@@ -365,67 +379,69 @@ function M.func(input, env)
         local comments = {}
         
         for _, t in ipairs(types) do
-            local is_active = false
-            for _, trigger in ipairs(t.triggers) do
-                if trigger == true then is_active = true; break
-                elseif type(trigger) == "string" and ctx:get_option(trigger) then is_active = true; break end
-            end
-            
-            local is_tag_match = true
-            if t.tags then
-                is_tag_match = false
-                for req_tag, _ in pairs(t.tags) do
-                    if current_seg_tags[req_tag] then is_tag_match = true; break end
-                end
-            end
-            
-            if is_active and is_tag_match then
-                local query_text = is_chain and current_text or cand.text
-                local key = t.prefix .. query_text
-                local val = db:fetch(key)
-                
-                if not val and t.fmm then
-                    local seg_result = segment_convert(query_text, db, t.prefix, split_pat)
-                    if seg_result ~= query_text then val = seg_result end
+            if t.mode ~= "abbrev" then -- 跳过 abbrev 模式
+                local is_active = false
+                for _, trigger in ipairs(t.triggers) do
+                    if trigger == true then is_active = true; break
+                    elseif type(trigger) == "string" and ctx:get_option(trigger) then is_active = true; break end
                 end
                 
-                if val then
-                    local mode = t.mode
-                    local rule_comment = ""
-                    if t.comment_mode == "text" then rule_comment = cand.text
-                    elseif t.comment_mode == "comment" then rule_comment = cand.comment end
+                local is_tag_match = true
+                if t.tags then
+                    is_tag_match = false
+                    for req_tag, _ in pairs(t.tags) do
+                        if current_seg_tags[req_tag] then is_tag_match = true; break end
+                    end
+                end
+                
+                if is_active and is_tag_match then
+                    local query_text = is_chain and current_text or cand.text
+                    local key = t.prefix .. query_text
+                    local val = db:fetch(key)
+                    
+                    if not val and t.fmm then
+                        local seg_result = segment_convert(query_text, db, t.prefix, split_pat)
+                        if seg_result ~= query_text then val = seg_result end
+                    end
+                    
+                    if val then
+                        local mode = t.mode
+                        local rule_comment = ""
+                        if t.comment_mode == "text" then rule_comment = cand.text
+                        elseif t.comment_mode == "comment" then rule_comment = cand.comment end
 
-                    if mode == "comment" then
-                        local parts = {}
-                        for p in s_gmatch(val, split_pat) do insert(parts, p) end
-                        insert(comments, concat(parts, " "))
-                        
-                    elseif mode == "replace" then
-                        if is_chain then
-                            local first = true
-                            for p in s_gmatch(val, split_pat) do
-                                if first then 
-                                    current_text = p
-                                    if t.comment_mode == "none" then current_main_comment = ""
-                                    elseif t.comment_mode == "text" then current_main_comment = cand.text end
-                                    first = false
-                                else
-                                    insert(pending_candidates, { text=p, comment=rule_comment })
+                        if mode == "comment" then
+                            local parts = {}
+                            for p in s_gmatch(val, split_pat) do insert(parts, p) end
+                            insert(comments, concat(parts, " "))
+                            
+                        elseif mode == "replace" then
+                            if is_chain then
+                                local first = true
+                                for p in s_gmatch(val, split_pat) do
+                                    if first then 
+                                        current_text = p
+                                        if t.comment_mode == "none" then current_main_comment = ""
+                                        elseif t.comment_mode == "text" then current_main_comment = cand.text end
+                                        first = false
+                                    else
+                                        insert(pending_candidates, { text=p, comment=rule_comment })
+                                    end
+                                end
+                            else
+                                show_main = false
+                                for p in s_gmatch(val, split_pat) do 
+                                    insert(pending_candidates, { text=p, comment=rule_comment }) 
                                 end
                             end
-                        else
-                            show_main = false
+                        elseif mode == "append" then
                             for p in s_gmatch(val, split_pat) do 
                                 insert(pending_candidates, { text=p, comment=rule_comment }) 
                             end
                         end
-                    elseif mode == "append" then
-                        for p in s_gmatch(val, split_pat) do 
-                            insert(pending_candidates, { text=p, comment=rule_comment }) 
-                        end
                     end
                 end
-            end
+            end 
         end
 
         if #comments > 0 then
@@ -440,7 +456,7 @@ function M.func(input, env)
 
         if show_main then
             if is_chain and current_text ~= cand.text then
-                local nc = Candidate("kv", cand.start, cand._end, current_text, current_main_comment)
+                local nc = Candidate(cand.type or "kv", cand.start, cand._end, current_text, current_main_comment)
                 nc.preedit = cand.preedit 
                 nc.quality = cand.quality
                 yield(nc)
@@ -451,12 +467,83 @@ function M.func(input, env)
 
         for _, item in ipairs(pending_candidates) do
             if not (show_main and item.text == current_text) then
-                local nc = Candidate("kv", cand.start, cand._end, item.text, item.comment)
+                local nc = Candidate("derived", cand.start, cand._end, item.text, item.comment)
                 nc.preedit = cand.preedit
-                nc.quality = cand.quality
+                nc.quality = cand.quality 
                 yield(nc)
             end
         end
+    end
+    -- [Helper] 尝试触发简码
+    local function try_trigger_abbrev(is_empty_override)
+        for _, t in ipairs(types) do
+            -- 只有当模式是 abbrev 且 当前不是全拼 时，才进入逻辑
+            if t.mode == "abbrev" and input_type ~= "pinyin" then
+                local is_tag_match = true
+                if t.tags then
+                    is_tag_match = false
+                    for req_tag, _ in pairs(t.tags) do
+                        if current_seg_tags[req_tag] then is_tag_match = true; break end
+                    end
+                end
+
+                if is_tag_match then
+                    local lazy_switch = t.triggers[1]
+                    local always_switch = t.triggers[2]
+                    local active_mode = "none"
+
+                    if always_switch then
+                        if always_switch == true or (type(always_switch) == "string" and ctx:get_option(always_switch)) then
+                            active_mode = "always"
+                        end
+                    end
+                    if active_mode == "none" and lazy_switch then
+                        if lazy_switch == true or (type(lazy_switch) == "string" and ctx:get_option(lazy_switch)) then
+                            active_mode = "lazy"
+                        end
+                    end
+
+                    local should_trigger = false
+                    if active_mode == "always" then should_trigger = true
+                    elseif active_mode == "lazy" and is_empty_override then should_trigger = true
+                    end
+
+                    if should_trigger then
+                         -- ... (查库逻辑) ...
+                        local key = t.prefix .. input_code
+                        local val = db:fetch(key)
+                        if not val and not s_match(input_code, "[A-Z]") then
+                            val = db:fetch(t.prefix .. s_upper(input_code))
+                        end
+                        if val then
+                            for p in s_gmatch(val, split_pat) do
+                                local abbrev_cand = Candidate("abbrev", 0, #input_code, p, "")
+                                abbrev_cand.quality = 9999
+                                process_rules(abbrev_cand)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- [Main Loop] 主循环
+    local cand_count = 0
+    
+    for cand in input:iter() do
+        cand_count = cand_count + 1
+
+        if cand_count == 1 then
+            -- 判断是否为"空码" (raw / english / 纯字母 / 文本等于输入)
+            local is_empty = (cand.type == "raw" or cand.type == "english" or cand.text == input_code or not string.find(cand.text, "[^a-zA-Z]"))
+            try_trigger_abbrev(is_empty)
+        end
+
+        -- 原候选逻辑
+        process_rules(cand)
+    end
+    if cand_count == 0 then
+        try_trigger_abbrev(true)
     end
 end
 return M
