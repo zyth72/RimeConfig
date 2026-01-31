@@ -342,13 +342,29 @@ bash rime-install amzxyz/rime_wanxiang@wanxiang-shouyou-fuzhu:plum/dicts
 
 为了保持方案包精简，部分非必须的扩展数据未随压缩包分发，您可根据需求在在线 `custom` 目录中下载。
 
-**数据源清单与用途：**
+**在线数据源清单与用途：**
 
 | 文件名 | 用途 | 安装位置 |
 | --- | --- | --- |
 | `jm_flypy.txt` | **小鹤双拼简码** | 下载后复制内容，追加到根目录的 `custom_phrase.txt` 中。 |
 | `jm_zrm.txt` | **自然码双拼简码** | 下载后复制内容，追加到根目录的 `custom_phrase.txt` 中。 |
 | `tips_user.txt` | **Tips 翻译扩展数据** | 下载后放入 `lua/data` 目录中，重新部署即可生效。 |
+
+#### 9. 📂 数据管理
+| 文件名 | 用途 | 注意事项 |
+| --- | --- | --- |
+| `lua/data` | **存放lua加载的txt数据** | 数据的更新需要编辑txt后先删除lua文件夹下面对应的userdb数据库，重新部署才能重建数据库，从而实现更新 |
+| `lua/data/chinese_english.txt` | **中文翻译英文数据库** | 数据库位于lua/replacer.userdb中。 |
+| `lua/data/english_chinese.txt` | **英文翻译中文数据库** | 数据库位于lua/replacer.userdb中。 |
+| `lua/data/emoji.txt` | **emoji数据库** | 数据库位于lua/replacer.userdb中。 |
+| `lua/data/abbrev.txt` | **公共简码数据库** | 数据库位于lua/replacer.userdb中。 |
+| `lua/data/t9_abbrev.txt` | **t9用公共简码数据库** | 数据库位于lua/replacer.userdb中。数字为键 |
+| `lua/data/*Phrases.txt` | **OpenCC简繁转换词组数据库** | 数据库位于lua/replacer.userdb中。HK香港TW台湾 |
+| `lua/data/*Characters.txt` | **OpenCC简繁转换单字数据库** | 数据库位于lua/replacer.userdb中。ST简繁、TS繁简 |
+| `tips_show.txt` | **Tips 自带数据** | 数据库位于tips.userdb |
+| `tips_user.txt` | **Tips 用户数据** | 空文件交给用户自定义，数据库位于lua/tips.userdb  |
+| `input_statistics.lua` | **输入统计lua创建的实时数据** | 数据库位于lua/stats.userdb |
+| `super_sequence.lua` | **手动排序lua创建的实时数据** | 数据库位于lua/sequence.userdb |
 
 ### 答疑
 
@@ -589,6 +605,8 @@ datetime_formats:
 <img src="https://storage.deepin.org/thread/202509260127126065_计算器2.jpg" height="80">
 
 **自动上屏：**  例如：三位、四位简码唯一时，自动上屏如`jjkw岌岌可危` `zmhu怎么回事` 。默认未开启，方案文件中`speller:`字段下取消注释这两句开启 `#  auto_select: true  #  auto_select_pattern: ^[a-z]+/|^[a-df-zA-DF-Z]\w{3}|^e\w{4}`
+
+**空码回溯：** 当输入的时候前面编码有候选，但继续输入无候选了，此时会将上一次的候选显示到候选中并在注释中显示了一个`~`作为表示一种不稳固状态，在英文输入句子的时候也会有这个状态的出现。这样的设计省去了回退键，可以直接空格上屏，同时他也能极大的减少三码是为空给用户带来的异常感知。  
 
 **数字后自动半角：** 当中文状态输入数字的时候后面立即输入,。将自动转换为数字分割符，例如科学记数法1000,000 小数点 3.1415,如果你加入冒号:还可以优雅的输入时间12:30，当然你还可以双击输入的符号恢复全角符号的输出。但若你完全没有场景使用该功能，则可以通过patch，将其修改为commit  
 ```punctuator/digit_separators: ",."  >  punctuator/digit_separators: commit```

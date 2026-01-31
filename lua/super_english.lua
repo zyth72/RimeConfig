@@ -368,7 +368,7 @@ function F.func(input, env)
         local good_cand = restore_sentence_spacing(cand, env.split_pattern, env.delim_check_pattern)
         local fmt_cand = apply_formatting(good_cand, code_ctx)
         
-        -- [恢复] 去除注释中的太极符号
+        -- 去除注释中的太极符号
         if fmt_cand.comment and find(fmt_cand.comment, "\226\152\175") then
             local nc = Candidate(fmt_cand.type, fmt_cand.start, fmt_cand._end, fmt_cand.text, "")
             nc.preedit = fmt_cand.preedit
@@ -400,7 +400,7 @@ function F.func(input, env)
                 if not best_candidate_saved and cand.comment ~= "~" and not env.block_derivation then
                     env.memory[curr_input] = {
                         text = fmt_cand.text,
-                        preedit = fmt_cand.preedit or curr_input
+                        preedit = curr_input
                     }
                     best_candidate_saved = true
                 end
@@ -421,7 +421,7 @@ function F.func(input, env)
                 if not best_candidate_saved and cand.comment ~= "~" and not env.block_derivation then
                     env.memory[curr_input] = {
                         text = fmt_cand.text,
-                        preedit = fmt_cand.preedit or curr_input
+                        preedit = curr_input
                     }
                     best_candidate_saved = true
                 end
