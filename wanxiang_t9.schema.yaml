@@ -41,7 +41,9 @@ switches:
   - name: super_tips                    #开启后在输入编码后面的提示区显示实时的提示数据，受tips数据库影响，表情、翻译、车牌、符号等对应关系数据，并可实现句号上屏，不开启则默认，影响的是segment.prompt参数，归属：super_tips.lua
     states: [ 提示关, 提示开 ]
     reset: 1
-
+  - options: [abbrev_off, abbrev_lazy, abbrev_always]
+    states: [简码关, 空出简, 总出简]
+    reset: 1
 
 # 输入引擎
 engine:
