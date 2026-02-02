@@ -2852,26 +2852,12 @@ english:
     - derive/[@]//
     - derive/[-]//
     - derive/[_]//
-    # 派生无任何非字母数字字符的拼写
-    - derive/[^a-zA-Z0-9]//
-    # 禁用非英文、数字开头的编码
     - erase/^[^a-zA-Z0-9].+$/
-    # 全小写
     - derive/^.+$/\L$0/
-    # 全大写
     - derive/^.+$/\U$0/
-    # 首字母大写
     - derive/^./\U$0/
-    # 前 2~10 个字母大写
     - derive/^([a-z]{2})/\U$1/
-    - derive/^([a-z]{3})/\U$1/
-    - derive/^([a-z]{4})/\U$1/
-    - derive/^([a-z]{5})/\U$1/
-    - derive/^([a-z]{6})/\U$1/
-    - derive/^([a-z]{7})/\U$1/
-    - derive/^([a-z]{8})/\U$1/
-    - derive/^([a-z]{9})/\U$1/
-    - derive/^([a-z]{10})/\U$1/
+
 
   全拼:
     __append:
@@ -2896,6 +2882,7 @@ english:
       - derive/9/jiu/
       - derive/\+/jia/
       - derive/#/jing/
+      - erase/.*[0-9].*/
   自然码:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ui$1/
@@ -2919,6 +2906,7 @@ english:
       - derive/9/jq/
       - derive/\+/jw/
       - derive/#/jy/
+      - erase/.*[0-9].*/
   小鹤双拼:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ui$1/
@@ -2942,6 +2930,7 @@ english:
       - derive/9/jq/
       - derive/\+/jx/
       - derive/#/jk/
+      - erase/.*[0-9].*/
   微软双拼:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ui$1/
@@ -2966,6 +2955,7 @@ english:
       - derive/9/jq/
       - derive/\+/jw/
       - derive/#/j;/
+      - erase/.*[0-9].*/
   搜狗双拼:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ui$1/
@@ -2990,6 +2980,7 @@ english:
       - derive/9/jq/
       - derive/\+/jw/
       - derive/#/jy/
+      - erase/.*[0-9].*/
   智能ABC:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/vi$1/
@@ -3014,6 +3005,7 @@ english:
       - derive/9/jr/
       - derive/\+/jd/
       - derive/#/jy/
+      - erase/.*[0-9].*/
   紫光双拼:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ii$1/
@@ -3038,6 +3030,7 @@ english:
       - derive/9/jj/
       - derive/\+/jx/
       - derive/#/j;/
+      - erase/.*[0-9].*/
   拼音加加:
     __append:
       - derive/(?<!\d)1([1-9])(?!\d)/ii$1/
@@ -3061,6 +3054,7 @@ english:
       - derive/9/jn/
       - derive/\+/jb/
       - derive/#/jq/
+      - erase/.*[0-9].*/
 
 模糊音: 
   __append:
