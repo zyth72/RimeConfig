@@ -518,7 +518,7 @@ function M.func(input, env)
                         if val then
                             for p in s_gmatch(val, split_pat) do
                                 local abbrev_cand = Candidate("abbrev", 0, #input_code, p, "")
-                                abbrev_cand.quality = 9999
+                                abbrev_cand.quality = 90
                                 process_rules(abbrev_cand)
                             end
                         end
@@ -528,8 +528,9 @@ function M.func(input, env)
         end
     end
     -- [Main Loop] 主循环
-    local pending_cands = {}
-    local limit = 10
+    local pending_user_cands = {}  -- 用户词队列 (user_table)
+    local pending_other_cands = {} -- 原始前N个候选队列
+    local limit = 10               -- 探测窗口
     local has_phrase = false
     local cand_count = 0
 
@@ -537,30 +538,46 @@ function M.func(input, env)
         cand_count = cand_count + 1
         
         if cand_count <= limit then
-            table.insert(pending_cands, cand)
-            if cand.type == "phrase" then
-                has_phrase = true
+            if cand.type == "phrase" then has_phrase = true end
+            if cand.type == "user_table" then
+                insert(pending_user_cands, cand)
+            else
+                insert(pending_other_cands, cand)
             end
         else
             if cand_count == limit + 1 then
+
+                for _, uc in ipairs(pending_user_cands) do
+                    process_rules(uc)
+                end
+
                 if not has_phrase then 
                     try_trigger_abbrev(true) 
                 end
-                for _, pc in ipairs(pending_cands) do
-                    process_rules(pc)
+                
+                for _, oc in ipairs(pending_other_cands) do
+                    process_rules(oc)
                 end
-                pending_cands = nil
+
+                pending_user_cands = {}
+                pending_other_cands = {}
             end
             process_rules(cand)
         end
     end
 
-    if pending_cands then
-        if not has_phrase then
-             try_trigger_abbrev(true)
+    -- 如果整个输入流都不到 limit 个词，循环结束后的收尾逻辑
+    if #pending_user_cands > 0 or #pending_other_cands > 0 or (cand_count > 0 and cand_count <= limit) then
+
+        for _, uc in ipairs(pending_user_cands) do
+            process_rules(uc)
         end
-        for _, pc in ipairs(pending_cands) do
-            process_rules(pc)
+
+        if not has_phrase then
+            try_trigger_abbrev(true)
+        end
+        for _, oc in ipairs(pending_other_cands) do
+            process_rules(oc)
         end
     end
 end

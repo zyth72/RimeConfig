@@ -338,7 +338,7 @@ bash rime-install amzxyz/rime_wanxiang@wanxiang-shouyou-fuzhu:plum/dicts
 </details>
 ---
 
-#### 8. 📂 自定义扩展数据获取
+#### 8. 📂 自定义扩展-线上数据获取
 
 为了保持方案包精简，部分非必须的扩展数据未随压缩包分发，您可根据需求在在线 `custom` 目录中下载。
 
@@ -346,6 +346,8 @@ bash rime-install amzxyz/rime_wanxiang@wanxiang-shouyou-fuzhu:plum/dicts
 
 | 文件名 | 用途 | 安装位置 |
 | --- | --- | --- |
+| `renming.dict.yaml` | **人名词库，按需下载，pro使用万象工具箱刷新编码即可** | 下载后复制内容，追加到根目录的 `wanxiang.dict.yaml` 中。 |
+| `wuzhong.dict.yaml` | **物种词库，含动物植物分类等词条，按需下载，pro使用万象工具箱刷新编码即可** | 下载后复制内容，追加到根目录的 `wanxiang.dict.yaml` 中。 |
 | `jm_flypy.txt` | **小鹤双拼简码** | 下载后复制内容，追加到根目录的 `custom_phrase.txt` 中。 |
 | `jm_zrm.txt` | **自然码双拼简码** | 下载后复制内容，追加到根目录的 `custom_phrase.txt` 中。 |
 | `tips_user.txt` | **Tips 翻译扩展数据** | 下载后放入 `lua/data` 目录中，重新部署即可生效。 |
@@ -753,7 +755,6 @@ patch:
 ```
 patch:
   translator/dictionary: wanxianguser
-  radical_reverse_lookup/dictionary: wanxianguser
   user_dict_set/dictionary: wanxianguser
   add_user_dict/dictionary: wanxianguser
 ```
