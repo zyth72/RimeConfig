@@ -10,7 +10,6 @@ schema:
   description: |
     仓输入法:万象拼音九宫格方案
   dependencies:
-    - wanxiang_mixedcode    #中英文混合词汇
     - wanxiang_reverse      # 部件拆字，反查及辅码
 
 # 开关
@@ -75,9 +74,6 @@ engine:
     - lua_translator@*unicode              #通过输入大写U引导，并输入Unicode编码获得汉字输出
     - lua_translator@*number_translator    #数字、金额大写，通过输入大写R1234获得候选输出
     - lua_translator@*super_calculator     #超级计算器，Lua内查看高级用法
-    - table_translator@custom_phrase       #自定义短语 custom_phrase.txt，用于置顶自定义编码候选词
-    - table_translator@chengyu             #简码成语词汇表导入
-    - table_translator@wanxiang_mixedcode  #中英等混合词汇表导入
     - reverse_lookup_translator@wanxiang_reverse    #挂接部件组字和笔画反查
   filters:
     - lua_filter@*super_lookup                      #字词输入中反查辅助筛选
@@ -225,35 +221,6 @@ translator:
     - xform/^(.*);.*$/$1/
   #disable_user_dict_for_patterns:  #如果你开启调频，需要一并考虑这个配置是否需要，基本的6码3字不调频，你可以自定义，目前的逻辑是依然记录用户词但满足规则的不输出不被使用
   #  - "^[a-z]{1,6}"
-
-# 自定义短语
-custom_phrase:
-  dictionary: ""
-  user_dict: custom_phrase  #需要手动创建 custom_phrase.txt 文件
-  db_class: stabledb         #可设 tabledb〔文本〕或 userdb〔二进制〕
-  enable_completion: false  #补全提示
-  enable_sentence: false    #禁止造句
-  initial_quality: 99       #custom_phrase 的权重应该比 pinyin 和 wanxiang_en 大
-
-
-# 简码词库导入位于dicts得chengyu.txt文件词库
-chengyu:
-  dictionary: ""
-  user_dict: dicts/chengyu
-  db_class: stabledb
-  enable_sentence: false
-  enable_completion: false
-  initial_quality: 1.3
-
-# 中文、英文、数字、符号等混合词汇
-wanxiang_mixedcode:
-  dictionary: wanxiang_mixedcode
-  db_class: stabledb
-  enable_completion: true
-  enable_sentence: false
-  initial_quality: 2
-  comment_format:
-    - xform/.*//
 
 super_replacer:
     db_name: lua/replacer
