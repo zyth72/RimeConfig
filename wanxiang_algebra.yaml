@@ -726,37 +726,37 @@ base:
       - xlit/①②③④/7890
       - derive/^ng(\d)$/eng$1/
       - xform/^n(\d)/en$1/
-      - xform/^m(\d)(;.*)/me$1$2/
-      - derive/^([jqxy])u$/$1v/
-      - derive/^([aoe].*)$/o$1/
-      - xform/^([ae])(.*)$/$1$1$2/
-      - xform/iu$/Ⓝ/
-      - xform/[iu]a$/Ⓑ/
-      - xform/er$/Ⓠ/
-      - xform/ing$/Ⓠ/
-      - xform/[uv]an$/Ⓒ/
-      - xform/[uv]e$/Ⓧ/
-      - xform/uai$/Ⓧ/
+      - xform/^m(\d)/me$1/
+      - derive/^([jqxy])u(\d)$/$1v$2/
+      - derive/^([aoe].*)(\d)$/o$1$2/
+      - xform/^([ae])(.*)(\d)$/$1$1$2$3/
+      - xform/iu(\d)$/Ⓝ$1/
+      - xform/[iu]a(\d)$/Ⓑ$1/
+      - xform/er(\d)$/Ⓠ$1/
+      - xform/ing(\d)$/Ⓠ$1/
+      - xform/[uv]an(\d)$/Ⓒ$1/
+      - xform/[uv]e(\d)$/Ⓧ$1/
+      - xform/uai(\d)$/Ⓧ$1/
       - xform/^sh/Ⓘ/
       - xform/^ch/Ⓤ/
       - xform/^zh/Ⓥ/
-      - xform/uo$/Ⓞ/
-      - xform/[uv]n$/Ⓩ/
-      - xform/i?ong$/Ⓨ/
-      - xform/[iu]ang$/Ⓗ/
-      - xform/(.)en$/$1Ⓡ/
-      - xform/(.)eng$/$1Ⓣ/
-      - xform/(.)ang$/$1Ⓖ/
-      - xform/ian$/Ⓙ/
-      - xform/(.)an$/$1Ⓕ/
-      - xform/iao$/Ⓚ/
-      - xform/(.)ao$/$1Ⓓ/
-      - xform/(.)ai$/$1Ⓢ/
-      - xform/(.)ei$/$1Ⓦ/
-      - xform/ie$/Ⓜ/
-      - xform/ui$/Ⓥ/
-      - xform/(.)ou$/$1Ⓟ/
-      - xform/in$/Ⓛ/
+      - xform/uo(\d)$/Ⓞ$1/
+      - xform/[uv]n(\d)$/Ⓩ$1/
+      - xform/i?ong(\d)$/Ⓨ$1/
+      - xform/[iu]ang(\d)$/Ⓗ$1/
+      - xform/(.)en(\d)$/$1Ⓡ$2/
+      - xform/(.)eng(\d)$/$1Ⓣ$2/
+      - xform/(.)ang(\d)$/$1Ⓖ$2/
+      - xform/ian(\d)$/Ⓙ$1/
+      - xform/(.)an(\d)$/$1Ⓕ$2/
+      - xform/iao(\d)$/Ⓚ$1/
+      - xform/(.)ao(\d)$/$1Ⓓ$2/
+      - xform/(.)ai(\d)$/$1Ⓢ$2/
+      - xform/(.)ei(\d)$/$1Ⓦ$2/
+      - xform/ie(\d)$/Ⓜ$1/
+      - xform/ui(\d)$/Ⓥ$1/
+      - xform/(.)ou(\d)$/$1Ⓟ$2/
+      - xform/in(\d)$/Ⓛ$1/
       - xlit/ⓆⓌⓇⓉⓎⓊⒾⓄⓅⓈⒹⒻⒼⒽⓂⒿⒸⓀⓁⓏⓍⓋⒷⓃ/qwrtyuiopsdfghmjcklzxvbn/
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/

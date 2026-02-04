@@ -93,7 +93,10 @@ local function apply_datetime_format(text)
     local ke_map = {"一刻", "二刻", "三刻", "四刻"}
     local current_ke = ke_map[math.floor(dt.min / 15) + 1]
     local current_shichen = get_shichen(dt.hour)
-
+    local week_table_big = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
+    local week_table_small = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+    local w_big = week_table_big[dt.wday]
+    local w_small = week_table_small[dt.wday]
     -- 3) 时间占位符映射表
     local h12 = dt.hour % 12; if h12 == 0 then h12 = 12 end
     local ampm = (dt.hour < 12) and "am" or "pm"
@@ -105,8 +108,10 @@ local function apply_datetime_format(text)
         y = string.format("%02d", dt.year % 100),
         m = string.format("%02d", dt.month),
         d = string.format("%02d", dt.day),
-        n = tostring(dt.month),
+        N = tostring(dt.month),
         j = tostring(dt.day),
+        W = w_big,
+        w = w_small,
         H = string.format("%02d", dt.hour),  -- 24小时制数字
         T = current_shichen,                -- 十二时辰（午时）
         K = current_ke,                     -- 刻钟（三刻）

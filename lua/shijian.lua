@@ -1724,8 +1724,8 @@ end
 -- 转义规则：
 --   \X       —— 将 X 按字面量输出（X 为任意单个字符，如 Y/m/d/H/M/S 等）
 --   [[...]]  —— 区块整体按字面量输出
+-- 日期格式化函数
 function format_dt(dt, format_str)
-    -- ---- 兜底，避免 string.format(nil) 报错 ----
     dt = dt or {}
     dt.year = tonumber(dt.year) or 0
     dt.month = tonumber(dt.month) or 1
@@ -1736,22 +1736,22 @@ function format_dt(dt, format_str)
 
     local s = format_str or ""
 
-    -- 1) 保护 [[...]] 字面量区块
+    -- 1) 保护 [[...]] 
     local blocks = {}
     s = s:gsub("%[%[(.-)%]%]", function(txt)
         blocks[#blocks+1] = txt
         return "\0BLK" .. #blocks .. "\0"
     end)
 
-    -- 2) 保护 \X（单字符转义）
+    -- 2) 保护 \X
     local escs = {}
     s = s:gsub("\\(.)", function(c)
         escs[#escs+1] = c
         return "\0ESC" .. #escs .. "\0"
     end)
 
-    -- 3) 占位符替换（先长再短，避免相互影响）
-    -- 日期
+    -- 3) 占位符替换
+    -- 日期部分
     s = s:gsub("Y", string.format("%04d", dt.year))
     s = s:gsub("y", string.format("%02d", dt.year % 100))
     s = s:gsub("m", string.format("%02d", dt.month))
@@ -1759,30 +1759,39 @@ function format_dt(dt, format_str)
     s = s:gsub("n", tostring(dt.month))
     s = s:gsub("j", tostring(dt.day))
 
-    -- 时间
+    -- 时间部分
     s = s:gsub("H", string.format("%02d", dt.hour))
     s = s:gsub("G", tostring(dt.hour))
+    
     local h12 = dt.hour % 12; if h12 == 0 then h12 = 12 end
     s = s:gsub("I", string.format("%02d", h12))
     s = s:gsub("l", tostring(h12))
-
     s = s:gsub("M", string.format("%02d", dt.min))
     s = s:gsub("S", string.format("%02d", dt.sec))
 
+    -- 英文 AM/PM
     local ampm = (dt.hour < 12) and "AM" or "PM"
     s = s:gsub("p", ampm:lower())
     s = s:gsub("P", ampm)
 
+    -- 中文时段变量 A
+    local zh_period = ""
+    local h = dt.hour
+    if h < 6 then zh_period = "凌晨"
+    elseif h < 12 then zh_period = "上午"
+    elseif h < 13 then zh_period = "中午"
+    elseif h < 18 then zh_period = "下午"
+    else zh_period = "晚上" end
+    s = s:gsub("A", zh_period)
+
     -- 时区
-    local raw_tz = os.date("%z") or "+0000"         -- 形如 +0800
-    local tz_colon = raw_tz:sub(1,3) .. ":" .. raw_tz:sub(4,5)  -- +08:00
+    local raw_tz = os.date("%z") or "+0000"
+    local tz_colon = raw_tz:sub(1,3) .. ":" .. raw_tz:sub(4,5)
     s = s:gsub("O", tz_colon)
     s = s:gsub("o", raw_tz)
 
-    -- 4) 还原 \X
+    -- 4) 还原
     s = s:gsub("\0ESC(%d+)\0", function(i) return escs[tonumber(i)] or "" end)
-
-    -- 5) 还原 [[...]]
     s = s:gsub("\0BLK(%d+)\0", function(i) return blocks[tonumber(i)] or "" end)
 
     return s
@@ -2570,7 +2579,7 @@ local function translator(input, seg, env)
     segment.tags = segment.tags + Set({ "shijian" })
 
     -- **日期候选项**
-    if (command == "rq") then
+    if (command == "rq" or command == "77") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/rq")
 
@@ -2712,7 +2721,7 @@ local function translator(input, seg, env)
         return
     end
     -- **时间候选项**
-    if (command == "sj" or command == "uj") then
+    if (command == "sj" or command == "75") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/sj")
 
@@ -2830,7 +2839,7 @@ local function translator(input, seg, env)
         return
     end
     -- **日期+时间（/dt，别名）**
-    if (command == "dt") then
+    if (command == "dt" or command == "38") then
         context:set_property("sequence_adjustment_code", "/dt")
 
         local now = os.date("*t")
@@ -2858,7 +2867,7 @@ local function translator(input, seg, env)
     end
 
     -- **时间戳（/tt）
-    if (command == "tt") then
+    if (command == "tt" or command == "88") then
         -- 启用手动排序支持
         context:set_property("sequence_adjustment_code", "/tt")
 
@@ -2889,7 +2898,7 @@ local function translator(input, seg, env)
         return
     end
     -- **农历候选项**
-    if (command == "nl") then
+    if (command == "nl" or command == "65") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/nl")
 
@@ -2906,7 +2915,7 @@ local function translator(input, seg, env)
         return
     end
 
-    if (command == "xq") then
+    if (command == "xq" or command == "97") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/xq")
 
@@ -2922,7 +2931,7 @@ local function translator(input, seg, env)
     end
 
     -- **第几周**
-    if (command == "ww") then
+    if (command == "ww" or command == "99") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/ww")
 
@@ -2936,7 +2945,7 @@ local function translator(input, seg, env)
     end
 
     -- **节气候选项**
-    if (command == "jq") then
+    if (command == "jq" or command == "55") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/jq")
         local jqs = GetNowTimeJq(os.date("%Y%m%d", os.time()))
@@ -2979,7 +2988,7 @@ local function translator(input, seg, env)
     end
 
     -- **节日查询**
-    if (command == "jr") then
+    if (command == "jr" or command == "57") then
         --- 设置手动排序的排序编码，以启用手动排序支持
         context:set_property("sequence_adjustment_code", "/jr")
 
@@ -3005,7 +3014,7 @@ local function translator(input, seg, env)
     end
 
     -- **日历信息整合处理**
-    if (command == "day") then
+    if (command == "day" or command == "329") then
         -- 获取当前时间
         local now = os.time()
         local year = tonumber(os.date("%Y", now))
