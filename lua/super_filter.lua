@@ -62,42 +62,36 @@ local function is_english_candidate(cand)
     return true
 end
 
--- 内部工具：获取当前十二时辰
+-- 1. 内部常量与工具函数
+local escape_map = {
+    ["\\n"] = "\n",            -- 换行
+    ["\\r"] = "\r",            -- 回车
+    ["\\t"] = "\t",            -- 制表符
+    ["\\s"] = " ",             -- 空格
+    ["\\z"] = "\226\128\139",  -- 零宽空格
+}
+
+local utf8_char_pattern = "[%z\1-\127\194-\244][\128-\191]*"
+
 local function get_shichen(hour)
     local shichen_map = {
         "子时", "丑时", "寅时", "卯时", "辰时", "巳时",
         "午时", "未时", "申时", "酉时", "戌时", "亥时"
     }
-    -- 时辰算法：(小时 + 1) / 2，子时跨越 23:00 - 01:00
     local index = math.floor((hour + 1) / 2) % 12 + 1
     return shichen_map[index]
 end
 
--- 核心：动态时间格式化（统一使用 \ 作为前缀）
-local function apply_datetime_format(text)
-    if not text or not string.find(text, "\\", 1, true) then 
-        return text 
-    end
-
+-- 2. 核心：处理动态时间（只负责替换，不负责保护）
+local function process_datetime_internal(s)
     local dt = os.date("*t")
-    local s = text
-
-    -- 1) 保护 [[...]] 块
-    local blocks = {}
-    s = s:gsub("%[%[(.-)%]%]", function(txt)
-        blocks[#blocks+1] = txt
-        return "\0BLK" .. #blocks .. "\0"
-    end)
-
-    -- 2) 计算时辰与刻钟
+    
     local ke_map = {"一刻", "二刻", "三刻", "四刻"}
     local current_ke = ke_map[math.floor(dt.min / 15) + 1]
     local current_shichen = get_shichen(dt.hour)
     local week_table_big = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
     local week_table_small = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
-    local w_big = week_table_big[dt.wday]
-    local w_small = week_table_small[dt.wday]
-    -- 3) 时间占位符映射表
+    
     local h12 = dt.hour % 12; if h12 == 0 then h12 = 12 end
     local ampm = (dt.hour < 12) and "am" or "pm"
     local raw_tz = os.date("%z") or "+0800"
@@ -110,11 +104,11 @@ local function apply_datetime_format(text)
         d = string.format("%02d", dt.day),
         N = tostring(dt.month),
         j = tostring(dt.day),
-        W = w_big,
-        w = w_small,
-        H = string.format("%02d", dt.hour),  -- 24小时制数字
-        T = current_shichen,                -- 十二时辰（午时）
-        K = current_ke,                     -- 刻钟（三刻）
+        W = week_table_big[dt.wday],
+        w = week_table_small[dt.wday],
+        H = string.format("%02d", dt.hour),
+        T = current_shichen,
+        K = current_ke,
         M = string.format("%02d", dt.min),
         S = string.format("%02d", dt.sec),
         p = ampm,
@@ -123,50 +117,46 @@ local function apply_datetime_format(text)
         o = raw_tz
     }
 
-    -- 4) 执行替换 \X
-    s = s:gsub("\\(%a)", function(char)
+    return s:gsub("\\(%a)", function(char)
         return time_map[char] or char 
     end)
-
-    -- 5) 还原 [[...]]
-    s = s:gsub("\0BLK(%d+)\0", function(i) return blocks[tonumber(i)] or "" end)
-
-    return s
 end
-local escape_map = {
-    ["\\n"] = "\n",            -- 换行
-    ["\\r"] = "\r",            -- 回车
-    ["\\t"] = "\t",            -- 制表符
-    ["\\s"] = " ",             -- 空格
-    ["\\z"] = "\226\128\139",  -- 零宽空格
-}
 
-local utf8_char_pattern = "[%z\1-\127\194-\244][\128-\191]*"
-
+-- 3. 主入口：全局保护 [[]] 并执行所有转义逻辑
 local function apply_escape_fast(text)
-    -- 核心判断：如果不含反斜杠，直接跳过，保护性能
-    if not text or not find(text, "\\", 1, true) then
+    -- 性能护航：不含反斜杠直接返回
+    if not text or not string.find(text, "\\", 1, true) then
         return text, false
     end
 
-    local new_text = text
+    -- 第一步：保护 [[...]]
+    local blocks = {}
+    local s = text:gsub("%[%[(.-)%]%]", function(txt)
+        blocks[#blocks+1] = txt
+        return "\0BLK" .. #blocks .. "\0"
+    end)
 
-    -- 1. 处理基础字符转义 (\n, \t, \s 等)
-    new_text = gsub(new_text, "\\[ntrsz]", escape_map)
+    -- 第二步：处理基础转义 (\n, \t, \s, \z 等)
+    s = s:gsub("\\[ntrsz]", escape_map)
 
-    -- 2. 处理 \数字 重复功能 (如 a\3 => aaa)
-    new_text = gsub(new_text, "(" .. utf8_char_pattern .. ")\\(%d+)", function(char, count)
+    -- 第三步：处理字符重复 (a\3 => aaa)
+    s = s:gsub("(" .. utf8_char_pattern .. ")\\(%d+)", function(char, count)
         local n = tonumber(count)
-        -- 设置 200 的上限是为了防止恶意长字符串卡死引擎
         if n and n > 0 and n < 200 then
             return string.rep(char, n)
         end
         return char .. "\\" .. count
     end)
-    -- 3. 处理动态时间占位符 (\Y, \T, \K 等)
-    new_text = apply_datetime_format(new_text)
 
-    return new_text, new_text ~= text
+    -- 第四步：处理动态时间占位符 (\Y, \T 等)
+    s = process_datetime_internal(s)
+
+    -- 第五步：还原 [[...]]
+    s = s:gsub("\0BLK(%d+)\0", function(i)
+        return blocks[tonumber(i)] or ""
+    end)
+
+    return s, s ~= text
 end
 
 local function format_and_autocap(cand)
