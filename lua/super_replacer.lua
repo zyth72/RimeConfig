@@ -553,32 +553,50 @@ function M.func(input, env)
     for cand in input:iter() do
         cand_count = cand_count + 1
         local q = cand.quality or 0
-
+        
+        -- 更新是否有phrase
+        if cand.type == "phrase" then has_phrase = true end
+        
         -- 1. [权重跳水/插队检测] 命中高权重词块
         if not abbrev_triggered and q < HIGH_THRESHOLD and #pending_cands > 0 then
             local max_q = 0
+            local has_high_q = false
             for _, pc in ipairs(pending_cands) do 
                 local pq = pc.quality or 0
-                if pq > max_q then max_q = pq end 
+                if pq > max_q then max_q = pq end
+                if pq > HIGH_THRESHOLD then has_high_q = true end
             end
             
-            if max_q > HIGH_THRESHOLD then
-                -- 情况 A: 有高权重词，输出并在其后紧跟简码
+            if has_high_q then
+                -- 有高权重词，输出所有缓存的候选
                 for _, pc in ipairs(pending_cands) do process_and_record(pc) end
                 pending_cands = {}
-                try_trigger_abbrev_logic(true, max_q - 0.001) -- 紧跟 99+ 词汇
+                
+                -- 只有没有phrase时才触发简码
+                if not has_phrase then
+                    try_trigger_abbrev_logic(true, max_q - 0.001) -- 紧跟 99+ 词汇
+                end
             end
         end
 
         -- 2. [基础缓存逻辑]
         if cand_count <= limit then
             table.insert(pending_cands, cand)
-            if cand.type == "phrase" then has_phrase = true end
         else
             -- 到达 limit 还没触发简码，说明前 limit 个词都没达到 99
             if cand_count == limit + 1 then
+                -- 检查是否有高权重词
+                local has_high_q = false
+                for _, pc in ipairs(pending_cands) do 
+                    if (pc.quality or 0) > HIGH_THRESHOLD then 
+                        has_high_q = true 
+                        break
+                    end
+                end
+                
                 if not abbrev_triggered then
-                    try_trigger_abbrev_logic(not has_phrase, 99) 
+                    -- 只有没有phrase时才触发简码
+                    try_trigger_abbrev_logic(not has_phrase, has_high_q and 99 or 9999) 
                 end
                 for _, pc in ipairs(pending_cands) do process_and_record(pc) end
                 pending_cands = nil
@@ -591,18 +609,25 @@ function M.func(input, env)
     if pending_cands then
         if not abbrev_triggered then
             local max_q = 0
+            local has_high_q = false
             for _, pc in ipairs(pending_cands) do 
                 local pq = pc.quality or 0
-                if pq > max_q then max_q = pq end 
+                if pq > max_q then max_q = pq end
+                if pq > HIGH_THRESHOLD then has_high_q = true end
             end
 
-            if max_q > HIGH_THRESHOLD then
-                -- 情况 A 有 99 词，输出后跟简码
+            if has_high_q then
+                -- 有高权重词，先输出所有候选
                 for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                try_trigger_abbrev_logic(true, max_q - 0.001)
+                -- 只有没有phrase时才触发简码
+                if not has_phrase then
+                    try_trigger_abbrev_logic(true, max_q - 0.001)
+                end
             else
-                -- 情况 B 没 99 词 (或只有普通词/空码)，简码置顶
-                try_trigger_abbrev_logic(not has_phrase, 9999)
+                -- 没有高权重词，只有没有phrase时才让简码置顶
+                if not has_phrase then
+                    try_trigger_abbrev_logic(true, 9999)
+                end
                 for _, pc in ipairs(pending_cands) do process_and_record(pc) end
             end
             pending_cands = nil
