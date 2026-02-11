@@ -4913,7 +4913,6 @@ autumn	autumn
 autumnal	autumnal
 autumns	autumns
 aux	aux
-AUX	AUX
 auxiliaries	auxiliaries
 auxiliary	auxiliary
 auxin	auxin
@@ -26923,6 +26922,7 @@ Gross Domestic Product	GDP
 GDP per capita	GDPpercapita
 GDPR	GDPR
 General Data Protection Regulation	GDPR
+GNSS	GNSS
 gear	gear
 geared	geared
 gearing	gearing
@@ -34054,6 +34054,7 @@ Initial Public Offerings	IPO
 iPod	IPod
 IPoE	IPoE
 Internet Protocol over Ethernet	IPoE
+IPS	IPS
 IPSec	IPSec
 ipswich	ipswich
 iptables	iptables
@@ -35420,7 +35421,7 @@ kilt	kilt
 kilter	kilter
 kiltie	kiltie
 kim	kim
-Kim	Kim
+Kimi	Kimi
 Kimball	Kimball
 Kimberly	Kimberly
 kimono	kimono
@@ -44318,6 +44319,7 @@ OpenBSD	OpenBSD
 opencast	opencast
 OpenCat	OpenCat
 OpenCC	OpenCC
+OpenClaw	OpenClaw
 OpenClash	OpenClash
 OpenCV	OpenCV
 opened	opened
@@ -46859,7 +46861,6 @@ permit	permit
 permits	permits
 permitted	permitted
 permitting	permitting
-permium	permium
 permutation	permutation
 permutations	permutations
 Permute	Permute
@@ -50865,6 +50866,7 @@ pyrenean	pyrenean
 pyretic	pyretic
 Pyrex	Pyrex
 pyrheliometer	pyrheliometer
+pyright	pyright
 pyrimidine	pyrimidine
 pyrite	pyrite
 pyrites	pyrites
@@ -64702,6 +64704,7 @@ Transport Layer Security	TLS
 tm	tm
 TM	TM
 tmux	tmux
+TN	TN
 TNT	TNT
 to	to
 toad	toad
@@ -68031,6 +68034,7 @@ v2rayN	v2rayN
 v8 engine	v8engine
 V8 JavaScript engine	V8JavaScriptengine
 V8 JS engine	V8JSengine
+VA	VA
 vac	vac
 vacancies	vacancies
 vacancy	vacancy
