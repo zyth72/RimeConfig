@@ -633,6 +633,18 @@ editor:
     Control+Delete: delete_candidate      # Ctrl+Delete键：删除或降权候选项
     Escape: cancel                        # Esc 键：取消输入
 
+# 在边界按音节移动，在音节内部按字符移动  rewind , forward
+# 按字符移动（循环）       left_by_char , right_by_char
+# 按字符移动（不循环）     left_by_char_no_loop , right_by_char_no_loop
+# 按音节跳转（循环）       left_by_syllable , right_by_syllable
+# 按音节跳转（不循环）     left_by_syllable_no_loop , right_by_syllable_no_loop
+navigator:
+  bindings:
+    Left: left_by_char_no_loop
+    Right: right_by_char_no_loop
+    Shift+Left: left_by_syllable
+    Shift+Right: right_by_syllable
+
 # 拼写设定
 speller:
 # table_translator翻译器，支持自动上屏。例如 “zmhu”可以自动上屏“怎么回事”

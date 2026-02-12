@@ -73,22 +73,72 @@ local escape_map = {
 
 local utf8_char_pattern = "[%z\1-\127\194-\244][\128-\191]*"
 
-local function get_shichen(hour)
-    local shichen_map = {
-        "子时", "丑时", "寅时", "卯时", "辰时", "巳时",
-        "午时", "未时", "申时", "酉时", "戌时", "亥时"
-    }
-    local index = math.floor((hour + 1) / 2) % 12 + 1
-    return shichen_map[index]
+-- 时辰数据：每个时辰2小时，共8刻，每刻15分钟
+local shichen_data = {
+    {name = "子时", start_hour = 23, end_hour = 1},
+    {name = "丑时", start_hour = 1, end_hour = 3},
+    {name = "寅时", start_hour = 3, end_hour = 5},
+    {name = "卯时", start_hour = 5, end_hour = 7},
+    {name = "辰时", start_hour = 7, end_hour = 9},
+    {name = "巳时", start_hour = 9, end_hour = 11},
+    {name = "午时", start_hour = 11, end_hour = 13},
+    {name = "未时", start_hour = 13, end_hour = 15},
+    {name = "申时", start_hour = 15, end_hour = 17},
+    {name = "酉时", start_hour = 17, end_hour = 19},
+    {name = "戌时", start_hour = 19, end_hour = 21},
+    {name = "亥时", start_hour = 21, end_hour = 23},
+}
+
+-- 刻数名称：每个时辰有8刻
+local ke_names = {"初刻", "二刻", "三刻", "四刻", "五刻", "六刻", "七刻", "八刻"}
+
+-- 获取时辰和刻数
+local function get_shichen_and_ke(hour, min)
+    local total_minutes = hour * 60 + min
+    
+    -- 遍历所有时辰
+    for _, shichen in ipairs(shichen_data) do
+        local shichen_name = shichen.name
+        local start_hour = shichen.start_hour
+        local end_hour = shichen.end_hour
+        
+        -- 计算时辰的起始和结束分钟数
+        local start_minutes = start_hour * 60
+        local end_minutes = end_hour * 60
+        
+        -- 处理跨天的子时
+        if start_hour > end_hour then
+            end_minutes = end_hour * 60 + 1440  -- 第二天的时间
+        end
+        
+        -- 检查是否在当前时辰内
+        if total_minutes >= start_minutes and total_minutes < end_minutes then
+            -- 计算在此时辰内的分钟偏移量
+            local offset_minutes = total_minutes - start_minutes
+            
+            -- 计算刻数索引 (0-7对应初刻-八刻)
+            -- 每刻15分钟，四舍五入到最近的刻
+            local ke_index = math.floor(offset_minutes / 15)
+            
+            -- 边界处理：当offset_minutes为120时，应该是八刻，所以索引为7
+            if ke_index >= 8 then
+                ke_index = 7
+            end
+            
+            return shichen_name, ke_names[ke_index + 1]  -- +1因为Lua数组从1开始
+        end
+    end
+    
+    return "未知时辰", "未知刻"
 end
 
 -- 2. 核心：处理动态时间（只负责替换，不负责保护）
 local function process_datetime_internal(s)
     local dt = os.date("*t")
     
-    local ke_map = {"一刻", "二刻", "三刻", "四刻"}
-    local current_ke = ke_map[math.floor(dt.min / 15) + 1]
-    local current_shichen = get_shichen(dt.hour)
+    -- 获取时辰和刻数
+    local current_shichen, current_ke = get_shichen_and_ke(dt.hour, dt.min)
+    
     local week_table_big = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
     local week_table_small = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
     
@@ -96,17 +146,29 @@ local function process_datetime_internal(s)
     local ampm = (dt.hour < 12) and "am" or "pm"
     local raw_tz = os.date("%z") or "+0800"
     local tz_colon = raw_tz:sub(1,3) .. ":" .. raw_tz:sub(4,5)
+    
+    -- 计算中文时段 A
+    local zh_period
+    local h = dt.hour
+    if h < 6 then zh_period = "凌晨"
+    elseif h < 12 then zh_period = "上午"
+    elseif h < 13 then zh_period = "中午"
+    elseif h < 18 then zh_period = "下午"
+    else zh_period = "晚上" end
 
     local time_map = {
         Y = string.format("%04d", dt.year),
         y = string.format("%02d", dt.year % 100),
         m = string.format("%02d", dt.month),
         d = string.format("%02d", dt.day),
-        N = tostring(dt.month),
+        N = tostring(dt.month),  -- 月份不带零（用\N避开\n换行冲突）
         j = tostring(dt.day),
         W = week_table_big[dt.wday],
         w = week_table_small[dt.wday],
         H = string.format("%02d", dt.hour),
+        G = tostring(dt.hour),
+        I = string.format("%02d", h12),
+        l = tostring(h12),
         T = current_shichen,
         K = current_ke,
         M = string.format("%02d", dt.min),
@@ -114,7 +176,8 @@ local function process_datetime_internal(s)
         p = ampm,
         P = ampm:upper(),
         O = tz_colon,
-        o = raw_tz
+        o = raw_tz,
+        A = zh_period
     }
 
     return s:gsub("\\(%a)", function(char)
@@ -148,7 +211,7 @@ local function apply_escape_fast(text)
         return char .. "\\" .. count
     end)
 
-    -- 第四步：处理动态时间占位符 (\Y, \T 等)
+    -- 第四步：处理动态时间占位符 (\Y, \T, \A 等)
     s = process_datetime_internal(s)
 
     -- 第五步：还原 [[...]]
@@ -158,7 +221,6 @@ local function apply_escape_fast(text)
 
     return s, s ~= text
 end
-
 local function format_and_autocap(cand)
     local text = cand.text
     if not text or text == "" then return cand end
@@ -588,8 +650,8 @@ function M.func(input, env)
 
     -- 2. 状态缓存
     local is_functional = false
-    if ctx and wanxiang and wanxiang.is_function_mode_active then
-        is_functional = wanxiang.is_function_mode_active(ctx)
+    if ctx and wanxiang and wanxiang.s2t_conversion then
+        is_functional = wanxiang.s2t_conversion(ctx)
     end
     local charset_active = (env.filters and #env.filters > 0) and (not is_functional)
     local enable_taichi = env.enable_taichi_filter
