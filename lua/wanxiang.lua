@@ -5,7 +5,7 @@ local wanxiang = {}
 
 -- x-release-please-start-version
 
-wanxiang.version = "v14.6.10"
+wanxiang.version = "v14.6.12"
 
 -- x-release-please-end
 
@@ -105,9 +105,27 @@ function wanxiang.is_function_mode_active(context)
         --seg:has_tag("punct") or      -- 标点符号 全角半角提示
         seg:has_tag("calculator") or -- super_calculator.lua V键计算器
         seg:has_tag("shijian") or    -- shijian.lua /rq /sr 等与时间日期相关功能
-        seg:has_tag("Ndate")         -- shijian.lua N日期功能
+        seg:has_tag("Ndate")       -- shijian.lua N日期功能
 end
 
+---@param context Context | nil
+---@return boolean
+function wanxiang.s2t_conversion(context)
+    if not context or not context.composition or context.composition:empty() then
+        return false
+    end
+
+    local seg = context.composition:back()
+    if not seg then return false end
+
+    return seg:has_tag("number") or  -- number_translator.lua 数字金额转换 R+数字
+        seg:has_tag("unicode") or    -- unicode.lua 输出 Unicode 字符 U+小写字母或数字
+        --seg:has_tag("punct") or      -- 标点符号 全角半角提示
+        seg:has_tag("calculator") or -- super_calculator.lua V键计算器
+        seg:has_tag("shijian") or    -- shijian.lua /rq /sr 等与时间日期相关功能
+        seg:has_tag("Ndate") or      -- shijian.lua N日期功能
+        seg:has_tag("wanxiang_reverse")
+end
 ---判断文件是否存在
 function wanxiang.file_exists(filename)
     local f = io.open(filename, "r")
