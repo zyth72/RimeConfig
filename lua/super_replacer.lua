@@ -122,12 +122,22 @@ local function rebuild(tasks, db)
     for _, task in ipairs(tasks) do
         local txt_path = task.path
         local prefix = task.prefix
+        -- 获取转换表
+        local conversion = task.conversion
+
         local f = open(txt_path, "r")
         if f then
             for line in f:lines() do
                 if line ~= "" and not s_match(line, "^%s*#") then
                     local k, v = s_match(line, "^(%S+)%s+(.+)")
                     if k and v then
+                        -- [新增] 逻辑：如果有转换表，先进行按键转换
+                        -- 使用 gsub 配合 table 进行单字符映射，非常高效且不关注顺序
+                        if conversion then
+                            k = s_gsub(k, ".", conversion)
+                        end
+                        
+                        -- 转换完成后，再和 prefix 组合
                         v = s_match(v, "^%s*(.-)%s*$")
                         db:update(prefix .. k, v)
                     end
@@ -328,6 +338,24 @@ function M.init(env)
             if #triggers > 0 then
                 local prefix = config:get_string(entry_path .. "/prefix") or ""
                 local mode = config:get_string(entry_path .. "/mode") or "append"
+                
+                -- 解析 编码转换conv
+                local conversion_map = nil
+                local conversion_str = config:get_string(entry_path .. "/conv")
+                if conversion_str then
+                    -- 分割 "from>to"，例如 "abc>123"
+                    local from_str, to_str = s_match(conversion_str, "^(.-)>(.+)$")
+                    if from_str and to_str and #from_str == #to_str then
+                        conversion_map = {}
+                        -- 构建映射表 {a='1', b='2', ...}
+                        for char_idx = 1, #from_str do
+                            local f_char = s_sub(from_str, char_idx, char_idx)
+                            local t_char = s_sub(to_str, char_idx, char_idx)
+                            conversion_map[f_char] = t_char
+                        end
+                    end
+                end
+
                 local comment_mode = config:get_string(entry_path .. "/comment_mode")
                 if not comment_mode then comment_mode = "comment" end
                 local fmm = config:get_bool(entry_path .. "/sentence")
@@ -350,11 +378,13 @@ function M.init(env)
                     if list then
                         for j = 0, list.size - 1 do
                             local p = resolve_path(config:get_string(d_path .. "/@" .. j))
-                            if p then insert(tasks, { path = p, prefix = prefix }) end
+                            -- 将 conversion_map 传入任务列表
+                            if p then insert(tasks, { path = p, prefix = prefix, conversion = conversion_map }) end
                         end
                     else
                         local p = resolve_path(config:get_string(d_path))
-                        if p then insert(tasks, { path = p, prefix = prefix }) end
+                        -- 将 conversion_map 传入任务列表
+                        if p then insert(tasks, { path = p, prefix = prefix, conversion = conversion_map }) end
                     end
                 end
             end

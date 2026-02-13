@@ -177,6 +177,7 @@ super_replacer:
       mode: abbrev          # <--- 新增的简码模式
       tags: [abc]
       prefix: "_abbr_"
+      #conv: "abcdefghijklmnopqrstuvwxyz>ABCDEFGHIJKLMNOPQRSTUVWXYZ" #从txt里编码转换为实际打字需要的编码，例如九键维护用字母加载数据库变数字
       files:
         - lua/data/abbrev.txt # 格式：zm\t怎么|在吗
 
@@ -456,8 +457,8 @@ translator:
   core_word_length: 4          # >0 启用，按段学词 + 相邻段拼接
   max_word_length: 7           # >0 启用，过长短语不记整词，只加元素权重
   contextual_suggestions: false  #模型用来开启词组权重预测，效果一般关闭
-  max_homophones: 5
-  max_homographs: 5
+  max_homophones: 8
+  max_homographs: 8
   initial_quality: 3           #初始质量拼音的权重应该比英文大
   spelling_hints: 30           #将注释以词典code字符串形式完全暴露，通过super_comment.lua完全接管，灵活配置。
   always_show_comments: true   # Rime 默认在 preedit 等于 comment 时取消显示 comment，这里强制一直显示，供super_comment_preedit.lua做判断用。
@@ -671,8 +672,8 @@ user_dict_set:
   enable_sentence: false
   spelling_hints: 50
   contextual_suggestions: false  #模型预测，假设模型里面有的四个字的词汇 现在智能 而首选组合 现在只能 当你输入 现在 上屏后下一次输入zhi neng就会输出，智能前提是没有权重更高的了，很明显这与你的预期“现在只能”不符。很明显实际上又要预测又要连续句子，放一起是很难优雅的。
-  max_homophones: 5
-  max_homographs: 5
+  max_homophones: 8
+  max_homographs: 8
   comment_format:
   enable_user_dict: false
   user_dict: zc
