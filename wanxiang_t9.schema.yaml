@@ -10,7 +10,7 @@ schema:
   description: |
     仓输入法:万象拼音九宫格方案
   dependencies:
-    - wanxiang_reverse      # 部件拆字，反查及辅码
+    #- wanxiang_reverse      # 部件拆字，反查及辅码
 
 # 开关
 # reset: 默认状态。注释掉后，切换窗口时不会重置到默认状态。
@@ -42,7 +42,7 @@ switches:
     reset: 1
   - options: [abbrev_off, abbrev_lazy, abbrev_always]
     states: [简码关, 空出简, 总出简]
-    reset: 1
+    reset: 2
 
 # 输入引擎
 engine:
@@ -287,8 +287,10 @@ super_replacer:
         mode: abbrev          # <--- 新增的简码模式
         tags: [abc]
         prefix: "_abbr_"
+        conv: "abcdefghijklmnopqrstuvwxyz>22233344455566677778889999" #从txt里编码转换为实际打字需要的编码，例如九键维护用字母加载数据库变数字
         files:
           - lua/data/t9_abbrev.txt # 格式：zm\t怎么|在吗
+          #- lua/data/t9_custom.txt #你可以这样patch一个新的文本代替根目录custom_phrase.txt，九键就有了自己的自定义词典
 
 # 部件拆字反查
 wanxiang_reverse:
@@ -368,6 +370,7 @@ speller:
   visual_delimiter: " "  # super_preedit.lua配置：是否让分隔符号跟着一起转换，例如nǐ'hǎo 在实际使用中表现出视觉拥挤，我们可以让delimiter平时是'转换为拼音的时候使用空格nǐ hǎo，更符合实际。
   tone_isolate: true     # super_preedit.lua配置：是否将数字声调从转换后拼音中隔离出来（true=隔离， false 直接参与转换）例如：nǐ3
   algebra:
+    - xform/ⅱ//  #用于Lua判断输入类型的标记
     - xform/^(.*);.*$/$1/
     - xlit/āáǎàōóǒòēéěèīíǐìūúǔùǖǘǚǜüńňǹḿm̀/aaaaooooeeeeiiiiuuuuvvvvvnnnmmm/
     - derive/^ng$/eng/
