@@ -198,7 +198,11 @@ end
 -- ----------------------
 local function get_fz_comment(cand, env, initial_comment)
     local length = utf8.len(cand.text)
-    if length > env.settings.candidate_length then
+
+    local has_special = initial_comment and (string.find(initial_comment, "~") or string.find(initial_comment, "\226\152\175"))
+    -- 长度过滤：增加一个“如果没有特殊标记”的前提
+    local length = utf8.len(cand.text)
+    if not has_special and length > env.settings.candidate_length then
         return ""
     end
     local auto_delimiter = env.settings.auto_delimiter or " "
@@ -247,7 +251,6 @@ local function get_fz_comment(cand, env, initial_comment)
         return ""
     end
 end
-
 
 local SV = {}
 

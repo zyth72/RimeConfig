@@ -514,6 +514,7 @@ wanxiang_mixedcode:
 wanxiang_reverse:
   tag: wanxiang_reverse
   dictionary: wanxiang_reverse
+  enable_completion: true
   prefix: "`"  # 反查前缀（反查时前缀会消失），与 recognizer/patterns/wanxiang_reverse 匹配
   tips: "〔反查：拆分|笔画〕"
 
