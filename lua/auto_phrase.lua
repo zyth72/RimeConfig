@@ -120,7 +120,6 @@ function AP.func(input, env)
 
     for cand in input:iter() do
         local genuine_cand    = cand:get_genuine()
-        local preedit         = genuine_cand.preedit or ""
         local initial_comment = genuine_cand.comment
 
         if use_comment_cache then
@@ -144,26 +143,22 @@ function AP.commit_handler(ctx, env)
     local raw_input      = ctx.input or ""
 
     ---------------------------------------------------
-    -- ① 英文 + '\' 造词 —— 始终启用，只依赖 env.en_memory
+    -- ① 英文造词（保持原样，仍用硬编码 "\"）
     ---------------------------------------------------
     if raw_input ~= "" and raw_input:sub(-1) == "\\" and is_ascii_word(commit_text) then
-        local code_body = raw_input:gsub("\\+$", "")   -- 去掉末尾连续 '\'
-        code_body = code_body:gsub("%s+$", "")         -- 去掉尾部空白
+        local code_body = raw_input:gsub("\\+$", "")
+        code_body = code_body:gsub("%s+$", "")
 
         if code_body ~= "" and env.en_memory then
-            -- 定义局部函数：执行写入操作
             local function save_entry(code)
                 local entry = DictEntry()
-                entry.text        = commit_text          -- 上屏英文本身
+                entry.text        = commit_text
                 entry.weight      = 1
-                entry.custom_code = code .. " "          -- 编码 + 空格
+                entry.custom_code = code .. " "
                 env.en_memory:update_userdict(entry, 1, "")
             end
 
-            -- 1. 写入原编码（无论大小写）
             save_entry(code_body)
-
-            -- 2. 如果原编码包含大写字母（转小写后不等于原编码），额外写入一份全小写编码
             local lower_code = string.lower(code_body)
             if lower_code ~= code_body then
                 save_entry(lower_code)
@@ -171,58 +166,78 @@ function AP.commit_handler(ctx, env)
         end
 
         comment_cache = {}
-        return  -- 英文造词后直接退出，杜绝干扰中文
+        return
     end
 
     ---------------------------------------------------
-    -- ② 中文自动造词：只在 env.memory 存在时工作
+    -- ② 中文自动造词
     ---------------------------------------------------
     if not env.memory then
         comment_cache = {}
         return
     end
 
-    -- 检查是否符合最小造词单元要求
+    -- 基础检查
     if segments_count <= 1 or utf8.len(commit_text) <= 1 then
         comment_cache = {}
         return
     end
-
-    -- 检查是否符合造词内容要求
     if not AP.is_chinese_only(commit_text) or comment_cache[commit_text] then
         comment_cache = {}
         return
     end
 
-    local preedits_table = {}
+    local code_table = {}
     local config = env.engine.schema.config
     local delimiter = config:get_string("speller/delimiter") or " '"
-    local escaped_delimiter =
-        utf8.char(utf8.codepoint(delimiter)):gsub("(%W)", "%%%1")
+    local escaped_delimiter = utf8.char(utf8.codepoint(delimiter)):gsub("(%W)", "%%%1")
 
     for i = 1, segments_count do
         local seg  = segments[i]
         local cand = seg:get_selected_candidate()
 
-        -- 防止单字片段造词
-        -- 如果取不到 cand，或者 cand.text 在缓存里没有编码，说明数据缺失，直接放弃
-        if not cand or not comment_cache[cand.text] then
-            comment_cache = {}
-            return
-        end
-
-        local cand_text = cand.text
-        local preedit   = comment_cache[cand_text]
-
-        if preedit and preedit ~= "" then
-            for part in preedit:gmatch("[^" .. escaped_delimiter .. "]+") do
-                table.insert(preedits_table, part)
+        -- 无候选：可能是符号段
+        if not cand then
+            if i == segments_count then
+                -- 最后一个 segment 无候选，允许跳过
+                goto continue
+            else
+                comment_cache = {}
+                return
             end
         end
+
+        -- 从缓存中取出该候选的注释（编码）
+        local comment = comment_cache[cand.text]
+
+        -- 有候选但无编码
+        if not comment or comment == "" then
+            if i == segments_count then
+                -- 最后一个 segment 无编码，允许跳过
+                goto continue
+            else
+                comment_cache = {}
+                return
+            end
+        end
+
+        -- 有编码，分割加入
+        for part in comment:gmatch("[^" .. escaped_delimiter .. "]+") do
+            table.insert(code_table, part)
+        end
+
+        ::continue::
     end
 
-    -- 二次检查：如果解析出来的编码段数不对，也不存
-    if #preedits_table == 0 then
+    -- 最终至少需要一个编码片段
+    if #code_table == 0 then
+        comment_cache = {}
+        return
+    end
+
+    -- 检查编码片段数量是否与 commit_text 的字数一致
+    local total_chars = utf8.len(commit_text)
+    if #code_table ~= total_chars then
         comment_cache = {}
         return
     end
@@ -230,11 +245,12 @@ function AP.commit_handler(ctx, env)
     local dictEntry = DictEntry()
     dictEntry.text        = commit_text
     dictEntry.weight      = 1
-    dictEntry.custom_code = table.concat(preedits_table, " ") .. " "
-
+    dictEntry.custom_code = table.concat(code_table, " ") .. " "
     env.memory:update_userdict(dictEntry, 1, "")
 
-    comment_cache = {}
+    if raw_input == "" then
+        comment_cache = {}
+    end
 end
 
 return AP

@@ -156,7 +156,7 @@ abductors	abductors
 abducts	abducts
 abdul	abdul
 abe	abe
-Abe	Abe
+ABE	ABE
 abeam	abeam
 abecedarian	abecedarian
 abed	abed
@@ -562,7 +562,7 @@ accosting	accosting
 accosts	accosts
 accouchement	accouchement
 account	account
-account for	account for
+account for	accountfor
 accountability	accountability
 accountable	accountable
 accountably	accountably
@@ -11607,6 +11607,7 @@ chinaware	chinaware
 chinch	chinch
 chincough	chincough
 chine	chine
+chinese	chinese
 Chinese	Chinese
 Ching	Ching
 chink	chink
@@ -21826,12 +21827,13 @@ englanders	englanders
 engle	engle
 englewood	englewood
 english	english
-englishize	englishize
-englishizes	englishizes
-englishman	englishman
-englishmen	englishmen
-englishness	englishness
-englishwoman	englishwoman
+English	English
+Englishize	Englishize
+Englishizes	Englishizes
+Englishman	Englishman
+Englishmen	Englishmen
+Englishness	Englishness
+Englishwoman	Englishwoman
 engorge	engorge
 engraft	engraft
 engrail	engrail
@@ -43661,7 +43663,6 @@ O'Reilly	O'Reilly
 O'Shea	O'Shea
 O'Sullivan	O'Sullivan
 O2O	O2O
-oa	oa
 OA	OA
 oaf	oaf
 oafish	oafish
@@ -48636,7 +48637,7 @@ porket	porket
 porkpie	porkpie
 porky	porky
 porn	porn
-pornhub	pornhub
+Pornhub	Pornhub
 porno	porno
 pornographer	pornographer
 pornographic	pornographic
@@ -71043,7 +71044,7 @@ xanthochroic	xanthochroic
 xanthous	xanthous
 Xanthus	Xanthus
 Xavier	Xavier
-xbox	xbox
+Xbox	Xbox
 Xbox One	XboxOne
 Xbox One X	XboxOneX
 Xbox Series	XboxSeries
@@ -71129,6 +71130,7 @@ Yalta	Yalta
 yam	yam
 Yamaha	Yamaha
 yaml	yaml
+.yaml	yaml
 YAML Ain't Markup Language	yaml
 yammer	yammer
 yan	yan

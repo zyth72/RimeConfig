@@ -654,6 +654,11 @@ function M.func(input, env)
         is_functional = wanxiang.s2t_conversion(ctx)
     end
     local charset_active = (env.filters and #env.filters > 0) and (not is_functional)
+    -- 五码且最后一个字符是 '/' 时禁用字符集过滤
+    if #code == 5 and code:sub(-1):find("[^%w]") then
+        charset_active = false
+    end
+
     local enable_taichi = env.enable_taichi_filter
 
     -- 3. 符号与分段分析
