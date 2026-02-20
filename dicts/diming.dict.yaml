@@ -8342,10 +8342,8 @@ sort: by_weight
 郊区县	jiāo qū xiàn	178
 郊区乡	jiāo qū xiāng	1
 蕉山乡	jiāo shān xiāng	1
-湫山乡	jiǎo shān xiāng	1
 峤山镇	jiào shān zhèn	1
 角山镇	jiǎo shān zhèn	1
-湫山镇	jiǎo shān zhèn	1
 焦石镇	jiāo shí zhèn	1
 焦滩乡	jiāo tān xiāng	1
 蛟潭镇	jiāo tán zhèn	1
@@ -14476,6 +14474,8 @@ sort: by_weight
 秋木乡	qiū mù xiāng	1
 秋浦县	qiū pǔ xiàn	111
 秋渠乡	qiū qú xiāng	1
+湫山乡	qiū shān xiāng	1
+湫山镇	qiū shān zhèn	1
 秋田县	qiū tián xiàn	238
 丘头镇	qiū tóu zhèn	1
 秋窝乡	qiū wō xiāng	1
@@ -17389,8 +17389,8 @@ sort: by_weight
 天水县	tiān shuǐ xiàn	69
 甜水镇	tián shuǐ zhèn	1
 天水镇	tiān shuǐ zhèn	1
-天台县	tiān tāi xiàn	202
-天台镇	tiān tāi zhèn	1
+天台县	tiān tái xiàn	202
+天台镇	tiān tái zhèn	1
 天坛镇	tiān tán zhèn	1
 天堂堡	tiān táng bǎo	207
 天堂镇	tiān táng zhèn	1
@@ -35094,10 +35094,10 @@ sort: by_weight
 鹤山街道	hè shān jiē dào	1
 鹤山农场	hè shān nóng chǎng	1
 河山子村	hé shān zǐ cūn	1
-和尚房村	hé shàng fáng cūn	1
-和尚铺村	hé shàng pù cūn	1
-和尚桥镇	hé shàng qiáo zhèn	1
-和尚塬村	hé shàng yuán cūn	1
+和尚房村	hé shang fáng cūn	1
+和尚铺村	hé shang pù cūn	1
+和尚桥镇	hé shang qiáo zhèn	1
+和尚塬村	hé shang yuán cūn	1
 河輋农场	hé shē nóng chǎng	1
 河深沟村	hé shēn gōu cūn	1
 河神庙乡	hé shén miào xiāng	1
@@ -52721,7 +52721,7 @@ sort: by_weight
 田孙庄村	tián sūn zhuāng cūn	1
 天塔街道	tiān tǎ jiē dào	1
 天台山镇	tiān tāi shān zhèn	1
-天台寺村	tiān tāi sì cūn	1
+天台寺村	tiān tái sì cūn	1
 天太永村	tiān tài yǒng cūn	1
 天坛街道	tiān tán jiē dào	1
 天堂寨镇	tiān táng zhài zhèn	1
@@ -65572,7 +65572,7 @@ sort: by_weight
 和平彝族乡	hé píng yí zú xiāng	1
 合浦合浦县	hé pǔ hé pǔ xiàn	1
 鹤山街街道	hè shān jiē jiē dào	1
-和尚房子乡	hé shàng fáng zi xiāng	1
+和尚房子乡	hé shang fáng zi xiāng	1
 和什力克乡	hé shí lì kè xiāng	1
 和田街街道	hé tián jiē jiē dào	1
 河尾山林场	hé wěi shān lín chǎng	1
