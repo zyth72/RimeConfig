@@ -43477,6 +43477,7 @@ Non-Player Character	NPC
 nPlayer	nPlayer
 npm	npm
 Node Package Manager	npm
+.npmrc	npmrc
 NSFW	NSFW
 Not Safe For Work	NSFW
 Not Suitable For Work	NSFW

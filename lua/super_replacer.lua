@@ -115,7 +115,42 @@ local function get_utf8_offsets(text)
     insert(offsets, len + 1)
     return offsets
 end
-
+-- 光速文件特征采样（替代耗时的全量哈希计算）
+local function generate_files_signature(tasks)
+    local sig_parts = {}
+    for _, task in ipairs(tasks) do
+        local f = open(task.path, "rb")
+        if f then
+            local size = f:seek("end")
+            local head = ""
+            local mid = ""
+            local tail = ""
+            
+            if size > 0 then
+                -- 截取头 64 字节
+                f:seek("set", 0)
+                head = f:read(64) or ""
+                
+                -- 截取尾 64 字节
+                local tail_pos = size - 64
+                if tail_pos < 0 then tail_pos = 0 end
+                f:seek("set", tail_pos)
+                tail = f:read(64) or ""
+                
+                -- 截取中间 64 字节 (防止同字节数的等长替换)
+                local mid_pos = math.floor(size / 2)
+                f:seek("set", mid_pos)
+                mid = f:read(64) or ""
+            end
+            f:close()
+            
+            -- 将 前缀 + 大小 + 头中尾 拼接成该文件的唯一特征码
+            insert(sig_parts, task.prefix .. size .. head .. mid .. tail)
+        end
+    end
+    -- 将所有文件的特征码合并
+    return concat(sig_parts, "||")
+end
 -- 重建数据库 (仅在 wanxiang 版本变更时运行)
 local function rebuild(tasks, db)
     if db.empty then db:empty() end
@@ -150,47 +185,55 @@ local function rebuild(tasks, db)
 end
 
 -- 连接或重连数据库 (Singleton Logic)
+-- 连接或重连数据库 (融入光速特征校验)
 local function connect_db(db_name, current_version, delimiter, tasks)
-    -- 1. 检查现有实例是否存活
     if replacer_instance then
         local status, _ = pcall(function() return replacer_instance:fetch("___test___") end)
         if status then return replacer_instance end
-        replacer_instance = nil -- 死链接，重置
+        replacer_instance = nil
     end
 
     if not userdb then return nil end
-    
-    -- 2. 创建 LevelDB 对象
     local db = userdb.LevelDb(db_name)
     if not db then return nil end
 
-    -- 3. 检查是否需要重建 (先尝试只读打开)
+    -- 1. 瞬间计算当前所有物理文件的特征码
+    local current_signature = generate_files_signature(tasks)
+    
     local needs_rebuild = false
     if db:open_read_only() then
         local db_ver = db:meta_fetch("_wanxiang_ver") or ""
         local db_delim = db:meta_fetch("_delim")
-        if db_ver ~= current_version or db_delim ~= delimiter then
+        local db_sig = db:meta_fetch("_files_sig") or ""  -- 读取数据库里存的特征码
+        
+        -- 核心优雅点：版本变了、分隔符变了、或者文件内容被用户改了，统统触发重建！
+        if db_ver ~= current_version or db_delim ~= delimiter or db_sig ~= current_signature then
             needs_rebuild = true
         end
-        db:close() -- 必须关闭才能切换模式
+        db:close()
     else
-        needs_rebuild = true -- 无法打开，强制重建
+        needs_rebuild = true
     end
 
-    -- 4. 执行重建 (Write Mode)
     if needs_rebuild then
         if db:open() then
+            -- 优雅地清空旧数据，防止体积无意义膨胀
+            if db.clear then db:clear() elseif db.empty then db:empty() end
+            
             rebuild(tasks, db)
+            
+            -- 更新最新的烙印
             db:meta_update("_wanxiang_ver", current_version)
             db:meta_update("_delim", delimiter)
+            db:meta_update("_files_sig", current_signature) -- 记下当前的文件特征
+            
             if log and log.info then
-                log.info("super_replacer: 数据已更新至 " .. current_version)
+                log.info("super_replacer: 数据已重载，最新特征已记录")
             end
             db:close()
         end
     end
 
-    -- 5. 最终挂载 (Read-Only Mode)
     if db:open_read_only() then
         replacer_instance = db
         return db
@@ -211,8 +254,8 @@ local function segment_convert(text, db, prefix, split_pat)
         local matched = false
         local max_j = i + MAX_LOOKAHEAD
         if max_j > char_count + 1 then max_j = char_count + 1 end
-      
-        for j = max_j - 1, i + 1, -1 do
+
+        for j = max_j, i + 2, -1 do
             local start_byte = offsets[i]
             local end_byte = offsets[j] - 1
             local sub_text = s_sub(text, start_byte, end_byte)
@@ -221,7 +264,7 @@ local function segment_convert(text, db, prefix, split_pat)
             if val then
                 local first_val = s_match(val, split_pat)
                 insert(result_parts, first_val or sub_text)
-                i = j - 1
+                i = j - 1  -- 匹配成功，指针直接跳过已处理的词
                 matched = true
                 break
             end
@@ -390,7 +433,6 @@ function M.init(env)
             end
         end
     end
-
     -- 3. DB 初始化 (使用单例连接)
     env.db = connect_db(db_name, current_version, env.delimiter, tasks)
 end
@@ -409,14 +451,15 @@ function M.func(input, env)
     end
 
     local ctx = env.engine.context
+    local input_code = ctx.input
     local db = env.db
     local types = env.types
     local split_pat = env.split_pattern
     local comment_fmt = env.comment_format
     local is_chain = env.chain
-    local input_code = ctx.input
     local HIGH_THRESHOLD = 99
     local input_type = "unknown"
+
     if wanxiang and wanxiang.get_input_method_type then
         input_type = wanxiang.get_input_method_type(env)
     end

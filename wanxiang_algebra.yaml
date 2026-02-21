@@ -438,7 +438,7 @@ base:
       - xform/^n(\d)/en$1/
       - xform/^m(\d)(;.*)/me$1$2/
       - derive/^([jqxy])u(\d)$/$1v$2/
-      - derive/^([aoe].*)(\d)$/o$1$2/
+      - xform/^([aoe].*)(\d)$/o$1$2/
       - xform/^([ae])(.*)(\d)$/$1$1$2$3/
       - xform/iu(\d)$/Ⓠ$1/
       - xform/[iu]a(\d)$/Ⓦ$1/
@@ -511,7 +511,7 @@ base:
       - xform/^n(\d)/en$1/
       - xform/^m(\d)(;.*)/me$1$2/
       - derive/^([jqxy])u(\d)$/$1v$2/
-      - derive/^([aoe].*)(\d)$/o$1$2/
+      - xform/^([aoe].*)(\d)$/o$1$2/
       - xform/^([ae])(.*)(\d)$/$1$1$2$3/
       - xform/iu(\d)$/Ⓠ$1/
       - xform/[iu]a(\d)$/Ⓦ$1/
@@ -728,7 +728,7 @@ base:
       - xform/^n(\d)/en$1/
       - xform/^m(\d)/me$1/
       - derive/^([jqxy])u(\d)$/$1v$2/
-      - derive/^([aoe].*)(\d)$/o$1$2/
+      - xform/^([aoe].*)(\d)$/o$1$2/
       - xform/^([ae])(.*)(\d)$/$1$1$2$3/
       - xform/iu(\d)$/Ⓝ$1/
       - xform/[iu]a(\d)$/Ⓑ$1/
@@ -1380,7 +1380,7 @@ pro:
       - xform/^n(\d)(;.*)/en$1$2/
       - xform/^m(\d)(;.*)/me$1$2/
       - derive/^([jqxy])u(\d)(;.*)$/$1v$2$3/
-      - derive/^([aoe].*)(\d)(;.*)$/o$1$2$3/
+      - xform/^([aoe].*)(\d)(;.*)$/o$1$2$3/
       - xform/^([ae])(.*)(\d)(;.*)$/$1$1$2$3$4/
       - xform/iu(\d)(;.*)/Ⓠ$1$2/
       - xform/er(\d)(;.*)/Ⓡ$1$2/
@@ -1404,7 +1404,7 @@ pro:
       - xform/ie(\d)(;.*)/Ⓧ$1$2/
       - xform/ui(\d)(;.*)/Ⓥ$1$2/
       - derive/Ⓣ/Ⓥ/
-      - xform/ou(\d)(;.*)/Ⓑ$1$2/
+      - xform/ou(\d)(;.*)/$1Ⓑ$2$3/
       - xform/ing(\d)(;.*)/◯$1$2/  #注意这里的◯用来暂时替换分号
       - xform/in(\d)(;.*)/Ⓝ$1$2/
       - xform/[iu]a(\d)(;.*)/Ⓦ$1$2/
@@ -1451,7 +1451,7 @@ pro:
       - xform/^n(\d)(;.*)/en$1$2/
       - xform/^m(\d)(;.*)/me$1$2/
       - derive/^([jqxy])u(\d)(;.*)$/$1v$2$3/
-      - derive/^([aoe].*)(\d)(;.*)$/o$1$2$3/
+      - xform/^([aoe].*)(\d)(;.*)$/o$1$2$3/
       - xform/^([ae])(.*)(\d)(;.*)$/$1$1$2$3$4/
       - xform/iu(\d)(;.*)$/Ⓠ$1$2/
       - xform/[iu]a(\d)(;.*)$/Ⓦ$1$2/
@@ -1659,7 +1659,7 @@ pro:
       - xform/^n(\d)(;.*)/en$1$2/
       - xform/^m(\d)(;.*)/me$1$2/
       - derive/^([jqxy])u(\d)(;.*)$/$1v$2$3/
-      - derive/^([aoe].*)(\d)(;.*)$/o$1$2$3/
+      - xform/^([aoe].*)(\d)(;.*)$/o$1$2$3/
       - xform/^([ae])(.*)$/$1$1$2/
       - xform/iu(\d)(;.*)$/Ⓝ$1$2/
       - xform/[iu]a(\d)(;.*)$/Ⓑ$1$2/
