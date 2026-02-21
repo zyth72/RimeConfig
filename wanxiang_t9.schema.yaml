@@ -32,11 +32,12 @@ switches:
     reset: 0
   - options: [ raw_input, tone_display, full_pinyin ]   #开启后在输入编码的位置实时转换为带声调全拼或者不带声调全拼，不开启则采用系统配置原始编码，影响的是preedit_format,归属：super_preedit.lua
     states: [ 原编码, 有声调, 无声调 ]
-#    reset: 2     #对于开关组从0开始数，第几个就reset几可设为默认
+    reset: 2     #对于开关组从0开始数，第几个就reset几可设为默认
   - options: [ s2s, s2t, s2hk, s2tw ]   # 简繁转换开关组，可以在一个空选项和多个实际“- simplifier@s2hk”引入的项目之前切换，这是一个开关组，你可以将其中任意一个s2s等设置为toggle快捷键，多次按下将轮询
     states: [ 简体, 通繁, 港繁, 臺繁 ]
-  - name: tone_hint                     #开启后在候选的注释里面实时显示全拼声调，不开启则采用系统配置，影响的是comment_format，归属：super_comment.lua
-    states: [ 读音关, 读音开 ]
+  - options: [comment_off, tone_hint, toneless_hint]                     #开启后在候选的注释里面实时显示全拼声调，不开启则采用系统配置，影响的是comment_format，归属：super_comment.lua
+    states: [ 注释关, 有声调, 无声调 ]
+    reset: 2     #对于9键，仓、元书用这个参数选择拼音，所以固定为无声调输出，其他前端用户可以适当patch修改
   - name: super_tips                    #开启后在输入编码后面的提示区显示实时的提示数据，受tips数据库影响，表情、翻译、车牌、符号等对应关系数据，并可实现句号上屏，不开启则默认，影响的是segment.prompt参数，归属：super_tips.lua
     states: [ 提示关, 提示开 ]
     reset: 1
@@ -77,13 +78,19 @@ engine:
     - reverse_lookup_translator@wanxiang_reverse    #挂接部件组字和笔画反查
   filters:
     - lua_filter@*super_lookup                      #字词输入中反查辅助筛选
+    - lua_filter@*super_comment_preedit             #OpenCC前，超级注释模块、超级preedit，支持错词提示、辅助码显示，部件组字读音注释，有声调、无声调全拼编码的转换，支持个性化配置和关闭相应的功能，详情搜索super_comment_preedit进行详细配置
     - lua_filter@*super_replacer                    #OpenCC替代器，更灵活的处理方式，更自由的自定义方式，支持简繁转换、简码模式、支持候选替换、注释替换、候选派生等等
     - lua_filter@*super_filter                      #replacer后面，先进行转换后过滤，这样能繁体继承简体权重。本质功能相关功能见Lua文件
     - lua_filter@*super_sequence*F                  #手动排序，高亮候选 ctrl+j左移动 ctrl+k 右移动 ctrl+0 移除位移
     - uniquifier                                    # 去重
 
 t9:
-  isDisplayOriginalPreedit: false
+  isDisplayOriginalPreedit: true
+
+super_comment:                 # 超级注释模块，子项配置 true 开启，false 关闭
+  candidate_length: 15         # 候选词辅助码提醒的生效长度，0为关闭  但同时清空其它，应当使用上面开关来处理
+  corrector_type: "comment"    # 注意9键里应原状态输出，不要加括号。随意更换左右括号，比如"〔comment〕" 不加括号为无括号，comment占位不能动
+  chaifen: "〔chaifen〕"         # 随意更换左右括号，比如"〔chaifen〕" 不加括号为无括号，chaifen占位不能动
 
 # 字符集过滤lua
 # a,通用规范汉字表
@@ -211,16 +218,14 @@ translator:
   enable_correction: false     #是否开启自动纠错
   encode_commit_history: true  # 预留历史上屏自动编码成词
   contextual_suggestions: false  #模型预测，假设模型里面有的四个字的词汇 现在智能 而首选组合 现在只能 当你输入 现在 上屏后下一次输入zhi neng就会输出，智能前提是没有权重更高的了，很明显这与你的预期“现在只能”不符。很明显实际上又要预测又要连续句子，放一起是很难优雅的。
-  max_homophones: 5
-  max_homographs: 5
+  max_homophones: 8
+  max_homographs: 8
   core_word_length: 4          # >0 启用，按段学词 + 相邻段拼接
   max_word_length: 7           # >0 启用，过长短语不记整词，只加元素权重
   initial_quality: 3           #初始质量拼音的权重应该比英文大
   spelling_hints: 30           #将注释以词典code字符串形式完全暴露，通过super_comment.lua完全接管，灵活配置。
   always_show_comments: true   # Rime 默认在 preedit 等于 comment 时取消显示 comment，这里强制一直显示，供super_comment.lua做判断用。
   comment_format:
-    - xlit/āáǎàōóǒòēéěèīíǐìūúǔùǖǘǚǜüńňǹḿm̀/aaaaooooeeeeiiiiuuuuvvvvvnnnmmm/
-    - xform/^(.*);.*$/$1/
   #disable_user_dict_for_patterns:  #如果你开启调频，需要一并考虑这个配置是否需要，基本的6码3字不调频，你可以自定义，目前的逻辑是依然记录用户词但满足规则的不输出不被使用
   #  - "^[a-z]{1,6}"
 
@@ -273,7 +278,6 @@ super_replacer:
         prefix: "_s2hk_"
         files:
           - lua/data/HKVariants.txt
-          - lua/data/HKVariantsRevPhrases.txt
       - option: s2tw
         mode: replace         # <--- 替换原候选模式
         comment_mode: append
@@ -282,7 +286,6 @@ super_replacer:
         prefix: "_s2tw_"
         files:
           - lua/data/TWVariants.txt
-          - lua/data/TWVariantsRevPhrases.txt
       - option: [ abbrev_lazy, abbrev_always ]
         mode: abbrev          # <--- 新增的简码模式
         tags: [abc]

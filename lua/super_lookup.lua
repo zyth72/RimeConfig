@@ -204,6 +204,33 @@ local function list_contains(list, target)
     return false
 end
 
+-- 解析输入中的反查分隔点。
+-- 兼容动态获取的造词前缀：如果输入以 bypass_prefix 开头，则跳过它，只把后续反查引导符当作筛选分隔点。
+local function split_lookup_input(input, key, bypass_prefix)
+    if not input or input == "" or not key or key == "" then return nil end
+
+    local scan_from = 1
+    -- 如果有配置造词前缀，且当前输入是以它开头，就把扫描起点后移
+    if bypass_prefix and bypass_prefix ~= "" and input:sub(1, #bypass_prefix) == bypass_prefix then
+        scan_from = #bypass_prefix + 1
+    end
+
+    local s_start, s_end = nil, nil
+    local from = scan_from
+    while true do
+        local s, e = input:find(key, from, true)
+        if not s then break end
+        s_start, s_end = s, e
+        from = s + 1
+    end
+
+    if not s_start then return nil end
+
+    local code = input:sub(1, s_start - 1)
+    local fuma = input:sub(s_end + 1)
+    return code, fuma, s_start, s_end
+end
+
 local function parse_comment_codes(comment, pattern, target_len, enable_tone)
     if not comment or comment == "" then return nil end
     local parts = {}
@@ -307,6 +334,7 @@ function f.init(env)
 
     env.search_key_str = config:get_string('wanxiang_lookup/key') or '`'
     env.search_key_alt = alt_lua_punc(env.search_key_str)
+    env.bypass_prefix = config:get_string('add_user_dict/prefix')
 
     local tag = config:get_list('wanxiang_lookup/tags')
     if tag and tag.size > 0 then
@@ -320,11 +348,13 @@ function f.init(env)
 
     env.notifier = env.engine.context.select_notifier:connect(function(ctx)
         local input = ctx.input
-        local code = input:match('^(.-)' .. env.search_key_alt)
+        local code, fuma = split_lookup_input(input, env.search_key_str, env.bypass_prefix)
         if (not code or #code == 0) then return end
+
         local preedit = ctx:get_preedit()
-        local no_search_string = input:match('^(.-)' .. env.search_key_alt)
-        local edit = preedit.text:match('^(.-)' .. env.search_key_alt)
+        local no_search_string = code
+        local preedit_text = (preedit and preedit.text) or ""
+        local edit = select(1, split_lookup_input(preedit_text, env.search_key_str, env.bypass_prefix))
         if edit and edit:match('[%w/]') then
             ctx.input = no_search_string .. env.search_key_str
         else
@@ -353,9 +383,9 @@ function f.func(input, env)
     end
 
     local ctx_input = env.engine.context.input
-    local s_start, s_end = ctx_input:find(env.search_key_alt, 1, false)
+    -- 传入 env.bypass_prefix
+    local _, fuma, s_start, s_end = split_lookup_input(ctx_input, env.search_key_str, env.bypass_prefix)
     if not s_start then for cand in input:iter() do yield(cand) end return end
-    local fuma = ctx_input:sub(s_end + 1)
     if #fuma == 0 then for cand in input:iter() do yield(cand) end return end
 
     local tone_filter_seq = {}
@@ -428,13 +458,12 @@ function f.func(input, env)
             end
         end
 
-        -- 提取借用声调 (即使 config 里只写了 db，这里也要尝试从注释里借声调)
+        -- 提取借用声调
         local borrowed_tones = {} 
         if raw_data._comment_internal then
             for k, codes in ipairs(raw_data._comment_internal) do
                 borrowed_tones[k] = {}
                 for _, c in ipairs(codes) do
-                    -- parse_comment_codes 会把声调数字也放入 list，这里提取出来备用
                     if c:match("^%d+$") then borrowed_tones[k][c] = true end
                 end
             end
@@ -450,7 +479,6 @@ function f.func(input, env)
                     for k, tone_input in ipairs(tone_filter_seq) do
                         if k > #codes_seq then break end
                         local has_tone = list_contains(codes_seq[k], tone_input)
-                        -- 如果是 db 源且自身没匹配到声调，尝试查阅 borrowed_tones (从注释借来的)
                         if not has_tone and source_type == 'db' then
                             if borrowed_tones[k] and borrowed_tones[k][tone_input] then has_tone = true end
                         end

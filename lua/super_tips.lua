@@ -21,11 +21,35 @@ tips.status = "pending"
 tips.disabled_types = {}
 tips.preset_file_path = wanxiang.get_filename_with_fallback("lua/data/tips_show.txt")
 tips.user_override_path = rime_api.get_user_data_dir() .. "/lua/data/tips_user.txt"
-
+-- 光速文件特征采样
+local function generate_files_signature(paths)
+    local sig_parts = {}
+    for _, path in ipairs(paths) do
+        local f = io.open(path, "rb")
+        if f then
+            local size = f:seek("end")
+            local head, mid, tail = "", "", ""
+            if size > 0 then
+                f:seek("set", 0)
+                head = f:read(64) or ""
+                local tail_pos = size - 64
+                if tail_pos < 0 then tail_pos = 0 end
+                f:seek("set", tail_pos)
+                tail = f:read(64) or ""
+                f:seek("set", math.floor(size / 2))
+                mid = f:read(64) or ""
+            end
+            f:close()
+            table.insert(sig_parts, size .. head .. mid .. tail)
+        end
+    end
+    return table.concat(sig_parts, "||")
+end
 -- 元数据 Key
 local META_KEY = {
     version = "wanxiang_version",
     disabled_types = "disabled_types_fingerprint", -- 改名：配置指纹
+    files_sig = "files_signature",                 -- 用于记录物理文件的特征码
 }
 
 ---判断某个类型是否被禁用
@@ -86,18 +110,18 @@ function tips.init(config)
     end
     table.sort(disabled_keys) -- 排序，确保指纹唯一
     local current_disabled_fingerprint = table.concat(disabled_keys, "|")
-
-    -- 3. 检查是否需要重建
+    local current_signature = generate_files_signature({tips.preset_file_path, tips.user_override_path})
+    -- 检查是否需要重建
     tips_db:open()
     local needs_rebuild = false
 
-    -- A. 检查全局版本号
+    -- 检查全局版本号
     local db_ver = tips_db:meta_fetch(META_KEY.version)
     if db_ver ~= wanxiang.version then
         needs_rebuild = true
     end
 
-    -- B. 检查配置指纹 (如果版本号没变，但用户修改了禁用类型，也需要重建以清洗数据)
+    -- 检查配置指纹
     if not needs_rebuild then
         local db_fingerprint = tips_db:meta_fetch(META_KEY.disabled_types) or ""
         if db_fingerprint ~= current_disabled_fingerprint then
@@ -105,18 +129,28 @@ function tips.init(config)
         end
     end
 
-    -- 4. 执行重建
+    -- 检查文件是否被用户修改过
+    if not needs_rebuild then
+        local db_sig = tips_db:meta_fetch(META_KEY.files_sig) or ""
+        if db_sig ~= current_signature then
+            needs_rebuild = true
+        end
+    end
+
+    -- 执行重建
     if needs_rebuild then
-        tips_db:empty()
+        -- 优雅清空，防止体积膨胀
+        if tips_db.clear then tips_db:clear() elseif tips_db.empty then tips_db:empty() end
         tips.init_db_from_file(tips.preset_file_path)
         tips.init_db_from_file(tips.user_override_path)
 
         -- 更新元数据
         tips_db:meta_update(META_KEY.version, wanxiang.version)
         tips_db:meta_update(META_KEY.disabled_types, current_disabled_fingerprint)
+        tips_db:meta_update(META_KEY.files_sig, current_signature)
     end
 
-    -- 5. 切换为只读模式 (查询更快)
+    -- 切换为只读模式 (查询更快)
     tips_db:close()
     tips_db:open_read_only()
     

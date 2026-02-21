@@ -212,7 +212,7 @@ local function get_fz_comment(cand, env, initial_comment)
     end
 
     -- 根据 option 动态决定是否强制使用 tone
-    local use_tone = env.engine.context:get_option("tone_hint")
+    local use_tone = env.engine.context:get_option("tone_hint") or env.engine.context:get_option("toneless_hint")
     local fuzhu_type = use_tone and "tone" or "fuzhu"
 
     local first_segment = segments[1] or ""
@@ -393,6 +393,7 @@ function ZH.init(env)
     }
     CR.init(env)
     SV.init(env)
+    CF.init(env)
 end
 function ZH.fini(env)
     -- 清理
@@ -408,6 +409,7 @@ function ZH.func(input, env)
     local is_wanxiang_pro = (schema_id == "wanxiang_pro")
     local should_skip_candidate_comment = wanxiang.is_function_mode_active(context) or input_str == ""
     local is_tone_comment = env.engine.context:get_option("tone_hint")
+    local is_toneless_comment = env.engine.context:get_option("toneless_hint")
     local is_comment_hint = env.engine.context:get_option("fuzhu_hint")
     local is_chaifen_enabled = env.engine.context:get_option("chaifen_switch")
     --preedit相关声明
@@ -534,6 +536,12 @@ function ZH.func(input, env)
             local fz_comment = get_fz_comment(cand, env, initial_comment)
             if fz_comment then
                 final_comment = fz_comment
+            end
+        elseif is_toneless_comment then
+            local fz_comment = get_fz_comment(cand, env, initial_comment)
+            if fz_comment then
+                -- 获取到带调拼音后，调用 remove_pinyin_tone 去掉声调
+                final_comment = remove_pinyin_tone(fz_comment)
             end
         else
             if initial_comment and (string.find(initial_comment, "~") or string.find(initial_comment, "\226\152\175")) then --保留尾部临时英文标记

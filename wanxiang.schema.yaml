@@ -37,8 +37,8 @@ switches:
   - options: [ abbrev_off, abbrev_lazy, abbrev_always ]
     states: [ 简码关, 空出简, 总出简 ]
     reset: 1
-  - name: tone_hint                     #开启后在候选的注释里面实时显示全拼声调，不开启则采用系统配置，影响的是comment_format，归属：super_comment.lua
-    states: [ 读音关, 读音开 ]
+  - options: [comment_off, tone_hint, toneless_hint]   #开启后在候选的注释里面实时显示全拼声调，不开启则采用系统配置，影响的是comment_format，归属：super_comment.lua
+    states: [ 注释关, 有声调, 无声调 ]
   - name: super_tips                    #开启后在输入编码后面的提示区显示实时的提示数据，受tips数据库影响，表情、翻译、车牌、符号等对应关系数据，并可实现句号上屏，不开启则默认，影响的是segment.prompt参数，归属：super_tips.lua
     states: [ 提示关, 提示开 ]
     reset: 1
@@ -163,7 +163,6 @@ super_replacer:
       prefix: "_s2hk_"
       files:
         - lua/data/HKVariants.txt
-        - lua/data/HKVariantsRevPhrases.txt
     - option: s2tw
       mode: replace         # <--- 替换原候选模式
       comment_mode: append
@@ -172,7 +171,6 @@ super_replacer:
       prefix: "_s2tw_"
       files:
         - lua/data/TWVariants.txt
-        - lua/data/TWVariantsRevPhrases.txt
     - option: [ abbrev_lazy, abbrev_always ]
       mode: abbrev          # <--- 新增的简码模式
       tags: [abc]
@@ -519,7 +517,7 @@ wanxiang_reverse:
   tips: "〔反查：拆分|笔画〕"
 
 wanxiang_lookup: #设置归属于super_lookup.lua
-  tags: [ abc ]  # 检索当前tag的候选
+  tags: [ abc, add_user_dict ]  # 检索当前tag的候选
   key: "`"       # 输入中反查引导符，要添加到 speller/alphabet
   lookup: [ wanxiang_reverse ] #反查滤镜数据库，万象都合并为一个了
   data_source: [db]  #对于pro版本能从注释中加载词库辅助码，详情见Pro版本，base这里无需修改。
