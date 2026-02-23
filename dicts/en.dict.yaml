@@ -30910,9 +30910,9 @@ href	href
 Hrothgar	Hrothgar
 HTML	HTML
 HyperText Markup Language	HTML
-HTTP	HTTP
+http	http
 Hypertext Transfer Protocol	HTTP
-HTTPS	HTTPS
+https	https
 Hypertext Transfer Protocol Secure	HTTPS
 hualien	hualien
 huang	huang
@@ -45377,7 +45377,6 @@ Pablo	Pablo
 Pabst	Pabst
 pabulum	pabulum
 PAC	PAC
-Pac-Man	Pac-Man
 pace	pace
 paced	paced
 pacemaker	pacemaker
@@ -45424,6 +45423,7 @@ packsaddle	packsaddle
 packtrain	packtrain
 Packwood	Packwood
 pacman	pacman
+Pac-Man	pacman
 pact	pact
 pacts	pacts
 pad	pad

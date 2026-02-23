@@ -87,6 +87,7 @@ local s_upper = string.upper
 local open = io.open
 local type = type
 local tonumber = tonumber
+local fmm_cache = {}
 local replacer_instance = nil
 
 -- 基础依赖
@@ -221,7 +222,7 @@ local function connect_db(db_name, current_version, delimiter, tasks)
             if db.clear then db:clear() elseif db.empty then db:empty() end
             
             rebuild(tasks, db)
-            
+            fmm_cache = {} --只要词库重建，彻底清空旧缓存
             -- 更新最新的烙印
             db:meta_update("_wanxiang_ver", current_version)
             db:meta_update("_delim", delimiter)
@@ -249,39 +250,56 @@ local function segment_convert(text, db, prefix, split_pat)
     local result_parts = {}
     local i = 1
     local MAX_LOOKAHEAD = 6
-  
+
     while i <= char_count do
+        local start_byte = offsets[i]
         local matched = false
+        
         local max_j = i + MAX_LOOKAHEAD
         if max_j > char_count + 1 then max_j = char_count + 1 end
 
+        -- 1. 长词 FMM 循环与缓存拦截
         for j = max_j, i + 2, -1 do
-            local start_byte = offsets[i]
             local end_byte = offsets[j] - 1
             local sub_text = s_sub(text, start_byte, end_byte)
+            local cache_key = prefix .. sub_text
+            
+            local val = fmm_cache[cache_key]
+            if val == nil then
+                local db_res = db:fetch(cache_key)
+                fmm_cache[cache_key] = db_res or false
+                val = fmm_cache[cache_key]
+            end
           
-            local val = db:fetch(prefix .. sub_text)
             if val then
                 local first_val = s_match(val, split_pat)
                 insert(result_parts, first_val or sub_text)
-                i = j - 1  -- 匹配成功，指针直接跳过已处理的词
+                i = j - 1
                 matched = true
                 break
             end
         end
       
+        -- 2. 单字/单字符兜底（带缓存）
         if not matched then
-            local start_byte = offsets[i]
-            local end_byte = offsets[i+1] - 1
-            local char = s_sub(text, start_byte, end_byte)
-            local val = db:fetch(prefix .. char)
+            local single_char = s_sub(text, start_byte, offsets[i+1] - 1)
+            local cache_key = prefix .. single_char
+            
+            local val = fmm_cache[cache_key]
+            if val == nil then
+                local db_res = db:fetch(cache_key)
+                fmm_cache[cache_key] = db_res or false
+                val = fmm_cache[cache_key]
+            end
+            
             if val then
                 local first_val = s_match(val, split_pat)
-                insert(result_parts, first_val or char)
+                insert(result_parts, first_val or single_char)
             else
-                insert(result_parts, char)
+                insert(result_parts, single_char)
             end
         end
+        
         i = i + 1
     end
     return concat(result_parts)
@@ -444,12 +462,6 @@ end
 
 -- [Core Function] 核心逻辑 (保持原有逻辑不变)
 function M.func(input, env)
-    -- 如果数据库未连接，直接透传
-    if not env.types or #env.types == 0 or not env.db then
-        for cand in input:iter() do yield(cand) end
-        return
-    end
-
     local ctx = env.engine.context
     local input_code = ctx.input
     local db = env.db
@@ -459,6 +471,14 @@ function M.func(input, env)
     local is_chain = env.chain
     local HIGH_THRESHOLD = 99
     local input_type = "unknown"
+    if not ctx:is_composing() or ctx.input == "" then
+        fmm_cache = {}
+    end
+    -- 如果数据库未连接，直接透传
+    if not env.types or #env.types == 0 or not env.db then
+        for cand in input:iter() do yield(cand) end
+        return
+    end
 
     if wanxiang and wanxiang.get_input_method_type then
         input_type = wanxiang.get_input_method_type(env)
