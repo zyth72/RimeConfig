@@ -74,10 +74,17 @@ end
 
 local function expand_code_variant(main_projection, xlit_projection, part)
     local out, seen = {}, {}
+    local out_xlit, seen_xlit = {}, {}
     local function add(s) 
         if s and #s > 0 and not seen[s] then 
             seen[s] = true 
             table.insert(out, s) 
+        end 
+    end
+    local function add_xlit(s) 
+        if s and #s > 0 and not seen_xlit[s] then 
+            seen_xlit[s] = true 
+            table.insert(out_xlit, s) 
         end 
     end
     local function extract_odd_positions(s)
@@ -126,28 +133,42 @@ local function expand_code_variant(main_projection, xlit_projection, part)
     end
     if part:match('^%u+$') and xlit_projection then
         local xlit_result = xlit_projection:apply(part, true)
-        if xlit_result and #xlit_result > 0 then add(xlit_result) end
+        if xlit_result and #xlit_result > 0 then 
+            add_xlit(xlit_result) 
+        end
     end
-    return out
+    return out, out_xlit
 end
 
 local function build_reverse_group(main_projection, xlit_projection, db_table, text)
-    local group, seen = {}, {}
+    local group_main, seen_main = {}, {}
+    local group_xlit, seen_xlit = {}, {}
+    
     for _, db in ipairs(db_table) do
         local code = db:lookup(text)
         if code and #code > 0 then
             for part in code:gmatch('%S+') do
-                local variants = expand_code_variant(main_projection, xlit_projection, part)
-                for _, v in ipairs(variants) do 
-                    if not seen[v] then 
-                        seen[v] = true 
-                        group[#group + 1] = v 
+                -- 接收分离的两种数据
+                local main_variants, xlit_variants = expand_code_variant(main_projection, xlit_projection, part)
+                
+                -- 装填主数据
+                for _, v in ipairs(main_variants) do 
+                    if not seen_main[v] then 
+                        seen_main[v] = true 
+                        group_main[#group_main + 1] = v 
+                    end 
+                end
+                -- 装填 xlit 数据
+                for _, v in ipairs(xlit_variants) do 
+                    if not seen_xlit[v] then 
+                        seen_xlit[v] = true 
+                        group_xlit[#group_xlit + 1] = v 
                     end 
                 end
             end
         end
     end
-    return group
+    return group_main, group_xlit
 end
 
 local function group_match(group, fuma)
@@ -450,11 +471,28 @@ function f.func(input, env)
             for _, code_point in utf8.codes(cand_text) do
                 i = i + 1
                 local char_str = utf8.char(code_point)
+                
+                -- 1. 查缓存，如果没有就调用底层函数，拿到分离后的两种数据
                 if not db_cache[char_str] then
-                    db_cache[char_str] = build_reverse_group(env.main_projection, env.xlit_projection, env.db_table, char_str)
+                    local main_codes, xlit_codes = build_reverse_group(env.main_projection, env.xlit_projection, env.db_table, char_str)
+                    db_cache[char_str] = {
+                        main = main_codes or {},
+                        xlit = xlit_codes or {}
+                    }
                     env.cache_size = env.cache_size + 1 
                 end
-                raw_data.db[i] = db_cache[char_str] or {}
+                
+                -- 2. 核心分配逻辑：控制词组取什么数据
+                if cand_len == 1 then
+                    -- 单字反查：需要完整的产物，把 main 和 xlit 临时拼在一起传过去
+                    local combined = {}
+                    for _, v in ipairs(db_cache[char_str].main) do table.insert(combined, v) end
+                    for _, v in ipairs(db_cache[char_str].xlit) do table.insert(combined, v) end
+                    raw_data.db[i] = combined
+                else
+                    -- 词组反查：只取 main 的数据！彻底把 xlit 的产物隔离在外
+                    raw_data.db[i] = db_cache[char_str].main
+                end
             end
         end
 
