@@ -18,10 +18,16 @@
 
 local wanxiang = require("wanxiang")
 local M = {}
-
+--全局通信通道
+_G.WanxiangSharedState = _G.WanxiangSharedState or {
+    sorter_active = false, -- 标记排序脚本是否存活
+    last_input = "",       -- 记录上一次未打斜杠的拼音
+    page_cache = {}        -- 存放排序后的终极缓存
+}
 -- 性能优化：本地化字符串函数
 local byte, find, gsub, upper, sub = string.byte, string.find, string.gsub, string.upper, string.sub
 local utf8_codes = utf8.codes -- 本地化 utf8 迭代器
+local utf8_len = utf8.len
 
 local function fast_type(c)
     local t = c.type
@@ -232,7 +238,7 @@ local function format_and_autocap(cand)
 end
 
 local function clone_candidate(c)
-    local nc = Candidate(c.type, c.start, c._end, c.text, c.comment)
+    local nc = Candidate(c.type, c.start, c._end, c.text, c.comment or "")
     nc.preedit = c.preedit
     return nc
 end
@@ -567,7 +573,20 @@ local function in_charset(env, ctx, text)
 
     return codepoint_in_charset(env, ctx, target_cp, char)
 end
-
+-- 检查整个词组是否包含过滤字
+local function check_text_has_rare_char(env, ctx, text)
+    if not text or text == "" then return false end
+    for _, codepoint in utf8_codes(text) do
+        local character = utf8.char(codepoint)
+        if wanxiang.IsChineseCharacter(character) then
+            -- 复用原有的 codepoint_in_charset 进行精准探测
+            if not codepoint_in_charset(env, ctx, codepoint, character) then
+                return true
+            end
+        end
+    end
+    return false
+end
 function M.init(env)
     local cfg = env.engine and env.engine.schema and env.engine.schema.config
 
@@ -601,6 +620,8 @@ function M.init(env)
     init_charset_filter(env, cfg)
     local schema_id = env.engine.schema.schema_id
     env.enable_taichi_filter = (schema_id == "wanxiang" or schema_id == "wanxiang_pro")
+    env.phrase_history_dict = {}
+    env.page_cache = {}
 end
 
 function M.fini(env)
@@ -635,6 +656,11 @@ local function emit_with_pipeline(wrapper, ctxs)
     cand = ctxs.unify_tail_span(cand)
 
     yield(cand)
+    if not ctxs.code_has_symbol and #ctxs.env.page_cache < ctxs.wrap_limit then
+        if not _G.WanxiangSharedState.sorter_active then
+            table.insert(ctxs.env.page_cache, clone_candidate(cand))
+        end
+    end
     return true
 end
 
@@ -646,6 +672,14 @@ function M.func(input, env)
     -- 1. 快速环境检查
     if not code or code == "" or (comp and comp:empty()) then
         env.cache, env.locked = nil, false
+        env.phrase_history_dict = {}
+    else
+        local current_code_length = #code
+        for key_length in pairs(env.phrase_history_dict) do
+            if key_length > current_code_length then
+                env.phrase_history_dict[key_length] = nil
+            end
+        end
     end
 
     -- 2. 状态缓存
@@ -664,6 +698,9 @@ function M.func(input, env)
     -- 3. 符号与分段分析
     local symbol = env.symbol
     local code_has_symbol = symbol and #symbol == 1 and (find(code, symbol, 1, true) ~= nil)
+    if not code_has_symbol then
+        env.page_cache = {}
+    end
     local fully_consumed, last_seg, wrap_key, keep_tail_len = false, nil, nil, 0
 
     if code_has_symbol then
@@ -706,9 +743,44 @@ function M.func(input, env)
         env = env, ctx = ctx, suppress_set = nil,
         unify_tail_span = unify_tail_span, charset_active = charset_active,
         enable_taichi_filter = enable_taichi,
-        drop_sentence_after_completion = false -- 初始化为 false
+        drop_sentence_after_completion = false, -- 初始化为 false
+        code_has_symbol = code_has_symbol,
+        wrap_limit = (env.page_size or 5) * 2
     }
+    -- 字符集过滤词组替换逻辑
+    local function intercept_and_fallback_candidate(raw_candidate)
+        if not charset_active then return raw_candidate, false end
+        local candidate_text = raw_candidate.text
+        local text_length = utf8_len(candidate_text)
 
+        if text_length < 2 then return raw_candidate, false end
+        
+        -- 检查是否包含生僻字
+        local has_rare_character = check_text_has_rare_char(env, ctx, candidate_text)
+        if not has_rare_character then
+            return raw_candidate, false
+        end
+        local fallback_text = nil
+        local current_code_length = #code
+        for history_length = current_code_length - 1, 1, -1 do
+            local history_text = env.phrase_history_dict[history_length]
+            if history_text and utf8_len(history_text) == text_length then
+                fallback_text = history_text
+                break
+            end
+        end
+        if fallback_text then
+            local preedit_text = raw_candidate.preedit or code
+            if #preedit_text > 1 and preedit_text:sub(-1):match("[%w%p]") then
+                preedit_text = sub(preedit_text, 1, -2) .. " " .. sub(preedit_text, -1)
+            end
+            
+            local new_candidate = Candidate(raw_candidate.type, raw_candidate.start, raw_candidate._end, fallback_text, raw_candidate.comment or "")
+            new_candidate.preedit = preedit_text
+            return new_candidate, false
+        end
+        return raw_candidate, true
+    end
     -- 4. 加壳逻辑 (Wrap Logic)
     local function wrap_from_base(wrapper, key)
         if not wrapper or not key then return nil end
@@ -761,64 +833,112 @@ function M.func(input, env)
         end
         return false
     end
+    local raw_code = ""
+    if code_has_symbol then
+        local pos = find(code, symbol, 1, true)
+        if pos then raw_code = sub(code, 1, pos - 1) end
+    end
 
+    -- 动态选择缓存库：排序脚本存活且对得上暗号，就用全局的；否则用自己的兜底
+    local target_cache = env.page_cache
+    if _G.WanxiangSharedState.sorter_active and _G.WanxiangSharedState.last_input == raw_code then
+        target_cache = _G.WanxiangSharedState.page_cache
+    end
+
+    if code_has_symbol and target_cache and #target_cache > 0 then
+        for _, c in ipairs(target_cache) do
+            local text = c.text
+            local w = {
+                cand = c, text = text,
+                is_table = is_table_type(c), has_eng = has_english_token_fast(text)
+            }
+            local final_cand = c
+            
+            if wrap_key then
+                local wrapped_w = wrap_from_base(w, wrap_key)
+                if wrapped_w then final_cand = wrapped_w.cand end
+            end
+            
+            -- 校准预编辑区长度，动态显隐暗号字母
+            if fully_consumed and last_seg then
+                local nc = Candidate(final_cand.type, final_cand.start, last_seg._end, final_cand.text, final_cand.comment or "")
+                if wrap_key then
+                    nc.preedit = c.preedit or ""
+                else
+                    local typed_tail = string.sub(code, c._end + 1, last_seg._end)
+                    nc.preedit = (c.preedit or "") .. typed_tail
+                end
+                final_cand = nc
+            end
+            yield(final_cand)
+        end
+        return
+    end
     -- 模式 1: 非分组 (Direct Pass)
     if not do_group then
         local idx = 0
         for cand in input:iter() do
-            idx = idx + 1
-            -- 封装 Wrapper，后续逻辑复用属性
-            local txt = cand.text
-            local w = {
-                cand = cand,
-                text = txt,
-                is_table = is_table_type(cand),
-                has_eng = has_english_token_fast(txt)
-            }
+            local cand_fixed, is_hopeless_rare = intercept_and_fallback_candidate(cand)
 
-            if idx == 1 then
-                -- 英文长句过滤触发器
-                if w.is_table and #txt >= 4 and w.has_eng then
-                    emit_ctx.drop_sentence_after_completion = true
-                end
+            if not is_hopeless_rare then
+                cand = cand_fixed
+                idx = idx + 1
+                -- 封装 Wrapper，后续逻辑复用属性
+                local txt = cand.text
+                local w = {
+                    cand = cand,
+                    text = txt,
+                    is_table = is_table_type(cand),
+                    has_eng = has_english_token_fast(txt)
+                }
 
-                -- 符号出现时，保护 Cache 不被覆盖
-                if not code_has_symbol then
-                    env.cache = clone_candidate(format_and_autocap(cand))
-                end
-
-                -- Locked state: emit cache
-                if env.locked and (not wrap_key) and env.cache then
-                    local base = format_and_autocap(env.cache)
-                    local start_pos = (last_seg and last_seg.start) or 0
-                    local end_pos   = (last_seg and last_seg._end) or code_len
-                    if keep_tail_len > 0 then end_pos = math.max(start_pos, end_pos - keep_tail_len) end
-
-                    local nc = Candidate(base.type, start_pos, end_pos, base.text, base.comment)
-                    nc.preedit = base.preedit
-
-                    if emit_with_pipeline({cand=nc, text=base.text, has_eng=w.has_eng}, emit_ctx) then
-                        visual_idx = visual_idx + 1
+                if idx == 1 then
+                    if (utf8_len(txt) or 0) > 1 then
+                        env.phrase_history_dict[#code] = txt
                     end
-                    goto continue_loop
-                end
+                    -- 英文长句过滤触发器
+                    if w.is_table and #txt >= 4 and w.has_eng then
+                        emit_ctx.drop_sentence_after_completion = true
+                    end
 
-                -- Wrap first cand
-                if wrap_key and env.cache then
-                    local cache_w = {cand=env.cache, text=env.cache.text, is_table=w.is_table, has_eng=w.has_eng}
-                    local wrapped_w, base_txt = wrap_from_base(cache_w, wrap_key)
-                    if wrapped_w then
-                        if not emit_ctx.suppress_set then emit_ctx.suppress_set = {} end
-                        emit_ctx.suppress_set[base_txt] = true
-                        if emit_with_pipeline(wrapped_w, emit_ctx) then
+                    -- 符号出现时，保护 Cache 不被覆盖
+                    if not code_has_symbol then
+                        env.cache = clone_candidate(format_and_autocap(cand))
+                    end
+
+                    -- Locked state: emit cache
+                    if env.locked and (not wrap_key) and env.cache then
+                        local base = format_and_autocap(env.cache)
+                        local start_pos = (last_seg and last_seg.start) or 0
+                        local end_pos   = (last_seg and last_seg._end) or code_len
+                        if keep_tail_len > 0 then end_pos = math.max(start_pos, end_pos - keep_tail_len) end
+
+                        local nc = Candidate(base.type, start_pos, end_pos, base.text, base.comment)
+                        nc.preedit = base.preedit
+
+                        if emit_with_pipeline({cand=nc, text=base.text, has_eng=w.has_eng}, emit_ctx) then
                             visual_idx = visual_idx + 1
-                            goto continue_loop
+                        end
+                        goto continue_loop
+                    end
+
+                    -- Wrap first cand
+                    if wrap_key and env.cache then
+                        local cache_w = {cand=env.cache, text=env.cache.text, is_table=w.is_table, has_eng=w.has_eng}
+                        local wrapped_w, base_txt = wrap_from_base(cache_w, wrap_key)
+                        if wrapped_w then
+                            if not emit_ctx.suppress_set then emit_ctx.suppress_set = {} end
+                            emit_ctx.suppress_set[base_txt] = true
+                            if emit_with_pipeline(wrapped_w, emit_ctx) then
+                                visual_idx = visual_idx + 1
+                                goto continue_loop
+                            end
                         end
                     end
                 end
-            end
 
-            try_process_wrapper(w)
+                try_process_wrapper(w)
+            end
             ::continue_loop::
         end
         return
@@ -879,74 +999,82 @@ function M.func(input, env)
     local window_closed = false
 
     for cand in input:iter() do
-        idx2 = idx2 + 1
-        local txt = cand.text
-        local w = {
-            cand = cand,
-            text = txt,
-            is_table = is_table_type(cand),
-            has_eng = has_english_token_fast(txt)
-        }
+        local cand_fixed, is_hopeless_rare = intercept_and_fallback_candidate(cand)
 
-        if idx2 == 1 then
-             if not env.locked then env.cache = clone_candidate(format_and_autocap(cand)) end
-             if w.is_table and #txt >= 4 and w.has_eng then
-                 emit_ctx.drop_sentence_after_completion = true
-             end
+        if not is_hopeless_rare then
+            cand = cand_fixed
+            idx2 = idx2 + 1
+            local txt = cand.text
+            local w = {
+                cand = cand,
+                text = txt,
+                is_table = is_table_type(cand),
+                has_eng = has_english_token_fast(txt)
+            }
 
-             local emitted = false
-             if env.locked and (not wrap_key) and env.cache then
-                local base = format_and_autocap(env.cache)
-                local start_pos = (last_seg and last_seg.start) or 0
-                local end_pos   = (last_seg and last_seg._end) or code_len
-                if keep_tail_len > 0 then end_pos = math.max(start_pos, end_pos - keep_tail_len) end
-                local nc = Candidate(base.type, start_pos, end_pos, base.text, base.comment)
-                nc.preedit = base.preedit
-                if emit_with_pipeline({cand=nc, text=base.text, has_eng=w.has_eng}, emit_ctx) then
-                    visual_idx = visual_idx + 1; emitted = true
+            if idx2 == 1 then
+                if (utf8_len(txt) or 0) > 1 then
+                    env.phrase_history_dict[#code] = txt
                 end
-             elseif wrap_key then
-                 local cache_w = {cand=env.cache or cand, text=(env.cache or cand).text, is_table=w.is_table, has_eng=w.has_eng}
-                 local wrapped_w, base_txt = wrap_from_base(cache_w, wrap_key)
-                 if wrapped_w then
-                     if not emit_ctx.suppress_set then emit_ctx.suppress_set = {} end
-                     emit_ctx.suppress_set[base_txt] = true
-                     if emit_with_pipeline(wrapped_w, emit_ctx) then visual_idx = visual_idx + 1; emitted = true end
-                 end
-             end
-             if not emitted then try_process_wrapper(w) end
+                if not env.locked then env.cache = clone_candidate(format_and_autocap(cand)) end
+                if w.is_table and #txt >= 4 and w.has_eng then
+                    emit_ctx.drop_sentence_after_completion = true
+                end
 
-        elseif idx2 == 2 and mode == "unknown" then
-            if w.is_table then
-                mode = "passthrough"
-                try_process_wrapper(w)
-            else
-                mode = "grouping"
-                table.insert(normal_buf, w)
-                try_flush_page_sort(false)
-            end
-
-        else
-            if mode == "passthrough" then
-                try_process_wrapper(w)
-            else
-                if (not window_closed) and (grouped_cnt < sort_window) then
-                    grouped_cnt = grouped_cnt + 1
-                    if w.is_table and (not w.has_eng) then
-                        table.insert(special_buf, w)
-                    else
-                        table.insert(normal_buf, w)
+                local emitted = false
+                if env.locked and (not wrap_key) and env.cache then
+                    local base = format_and_autocap(env.cache)
+                    local start_pos = (last_seg and last_seg.start) or 0
+                    local end_pos   = (last_seg and last_seg._end) or code_len
+                    if keep_tail_len > 0 then end_pos = math.max(start_pos, end_pos - keep_tail_len) end
+                    local nc = Candidate(base.type, start_pos, end_pos, base.text, base.comment)
+                    nc.preedit = base.preedit
+                    if emit_with_pipeline({cand=nc, text=base.text, has_eng=w.has_eng}, emit_ctx) then
+                        visual_idx = visual_idx + 1; emitted = true
                     end
+                elseif wrap_key then
+                    local cache_w = {cand=env.cache or cand, text=(env.cache or cand).text, is_table=w.is_table, has_eng=w.has_eng}
+                    local wrapped_w, base_txt = wrap_from_base(cache_w, wrap_key)
+                    if wrapped_w then
+                        if not emit_ctx.suppress_set then emit_ctx.suppress_set = {} end
+                        emit_ctx.suppress_set[base_txt] = true
+                        if emit_with_pipeline(wrapped_w, emit_ctx) then visual_idx = visual_idx + 1; emitted = true end
+                    end
+                end
+                if not emitted then try_process_wrapper(w) end
 
-                    if grouped_cnt >= sort_window then window_closed = true end
-                    try_flush_page_sort(false)
+            elseif idx2 == 2 and mode == "unknown" then
+                if w.is_table then
+                    mode = "passthrough"
+                    try_process_wrapper(w)
                 else
-                    if w.is_table and (not w.has_eng) then
-                        table.insert(special_buf, w)
-                    else
-                        table.insert(normal_buf, w)
-                    end
+                    mode = "grouping"
+                    table.insert(normal_buf, w)
                     try_flush_page_sort(false)
+                end
+
+            else
+                if mode == "passthrough" then
+                    try_process_wrapper(w)
+                else
+                    if (not window_closed) and (grouped_cnt < sort_window) then
+                        grouped_cnt = grouped_cnt + 1
+                        if w.is_table and (not w.has_eng) then
+                            table.insert(special_buf, w)
+                        else
+                            table.insert(normal_buf, w)
+                        end
+
+                        if grouped_cnt >= sort_window then window_closed = true end
+                        try_flush_page_sort(false)
+                    else
+                        if w.is_table and (not w.has_eng) then
+                            table.insert(special_buf, w)
+                        else
+                            table.insert(normal_buf, w)
+                        end
+                        try_flush_page_sort(false)
+                    end
                 end
             end
         end

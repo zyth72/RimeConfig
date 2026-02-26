@@ -16,7 +16,7 @@
 -- 3) 初始化：先 flush 本机增量到导出 → 外部合并(所有设备文件+本机DB，LWW) → 重写本机导出(含墓碑) → 导入覆盖DB，p=0删除键，不导入
 -- 4) 同步路径策略：能从 installation.yaml 读取到 sync_dir 就用它；读不到才用默认 user_dir/sync
 -- 带 Ctrl 可视化标记
-
+-- ✨是给上一层滤镜传递信息的代码，不用时便与删除
 local wanxiang = require("wanxiang")
 local userdb   = require("lib/userdb")
 
@@ -28,6 +28,20 @@ local SYNC_FILE_PREFIX, SYNC_FILE_SUFFIX = "sequence", ".txt"
 local RUNTIME_EXPORT = false
 
 local _normalize_path, _is_abs_path, _path_join, _manifest_path
+
+-- ✨ 全局通信通道
+_G.WanxiangSharedState = _G.WanxiangSharedState or {
+    sorter_active = false,
+    last_input = "",
+    page_cache = {}
+}
+
+-- ✨ 防崩溃的候选词克隆函数
+local function clone_candidate(c)
+    local nc = Candidate(c.type, c.start, c._end, c.text, c.comment or "")
+    nc.preedit = c.preedit
+    return nc
+end
 ------------------------------------------------------------
 -- 二、通用工具（路径处理）
 ------------------------------------------------------------
@@ -496,7 +510,13 @@ end
 -- 十、Filter (含标记可视化)
 ------------------------------------------------------------
 local F = {}
-
+-- ✨ 初始化时读取用户设置的触发符号
+function F.init(env)
+    local cfg = env.engine.schema.config
+    local sym = cfg and (cfg:get_string("paired_symbols/symbol") or cfg:get_string("paired_symbols/trigger")) or "\\"
+    env.symbol = string.sub(sym, 1, 1)
+    env.page_size = cfg and cfg:get_int("menu/page_size") or 5
+end
 function F.fini()
     if RUNTIME_EXPORT then seq_data.maybe_export(true) end
 end
@@ -574,6 +594,19 @@ local function extract_adjustment_code(context)
 end
 
 function F.func(input, env)
+    -- ✨ 宣告：排序脚本活着，包裹脚本你别自己干活了，交给我！
+    _G.WanxiangSharedState.sorter_active = true
+    local context = env.engine.context
+    local code = context.input
+    local symbol = env.symbol or "\\"
+    local is_code_has_symbol = code and (string.find(code, symbol, 1, true) ~= nil)
+
+    -- 如果没有输入斜杠，说明是正常的选词排版过程，准备好全新的全局缓存
+    if not is_code_has_symbol then
+        _G.WanxiangSharedState.last_input = code
+        _G.WanxiangSharedState.page_cache = {}
+    end  -- ✨
+
     local function original_list() for cand in input:iter() do yield(cand) end end
     local context = env.engine.context
 
@@ -640,7 +673,8 @@ function F.func(input, env)
         -- 直接覆盖内存中的旧记录
         prev_adjustments[key] = curr_adjustment
     end
-
+    local cache_limit = (env.page_size or 5) * 2 --✨ 缓存前两页
+    local count = 0 -- ✨
     -- 渲染可视化标记
     for _, cand in ipairs(cands) do
         local cmt = cand.comment or ""
@@ -663,9 +697,15 @@ function F.func(input, env)
                         mark = " ●"          -- 原地不动
                     end
                     cand.comment = (cand.comment or "") .. mark
+
                 end
             end
         end
+        -- ✨ 把带好标记、排好序的终极状态，克隆进全局缓存，等包裹脚本来取！
+        if not is_code_has_symbol and count < cache_limit then
+            table.insert(_G.WanxiangSharedState.page_cache, clone_candidate(cand))
+            count = count + 1
+        end  -- ✨
         yield(cand)
     end
 
