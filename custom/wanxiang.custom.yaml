@@ -14,6 +14,14 @@ patch:
   super_comment:                  # 超级注释模块，子项配置 true 开启，false 关闭
     candidate_length: 2           # 候选词辅助码提醒的生效长度，0为关闭  但同时清空其它，应当使用上面开关来处理
     corrector_type: "〔comment〕"  # 随意更换左右括号，比如"〔comment〕" 不加括号为无括号，comment占位不能动
+    cand_type:
+      user_phrase: ""
+      sentence: "∞"
+      phrase: ""
+      table: ""
+      user_table: ""
+      completion: ""
+      abbrev: ""
 
   super_replacer:
     db_name: lua/replacer
@@ -117,7 +125,7 @@ patch:
   # Tips 配置项
   tips:
     # 禁用的 tips 类型，初始化 tips 数据库的时候会直接忽略相关规则，修改部署后生效
-    # 可选项为：偏旁，符号，化学式，时间，符号，组字，翻译，表情，货币，车牌
+    # 可选项为：偏旁，符号，化学式，时间，符号，组字，翻译，表情，货币，车牌, 单位
     disabled_types: []
 
   # 给 kp_number_processor 用的小键盘模式，能自动读取recognizer下面正则与之功能对齐

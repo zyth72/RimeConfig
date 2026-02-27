@@ -697,7 +697,8 @@ function M.func(input, env)
 
     -- 3. 符号与分段分析
     local symbol = env.symbol
-    local code_has_symbol = symbol and #symbol == 1 and (find(code, symbol, 1, true) ~= nil)
+    local symbol_pos = symbol and #symbol == 1 and find(code, symbol, 1, true)
+    local code_has_symbol = symbol_pos and symbol_pos > 1
     if not code_has_symbol then
         env.page_cache = {}
     end

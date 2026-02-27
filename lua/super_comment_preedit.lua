@@ -325,53 +325,76 @@ function SV.update_preedit(env, preedit)
     end
 end
 -- 对 cand.preedit 应用 tone_preedit/0..9 的映射（数字 -> 上标等）
+-- 对 cand.preedit 应用转换：数字转上标，且隐藏双大写辅助码
 local function apply_tone_preedit(env, cand)
     if not cand or not cand.preedit or cand.preedit == "" then
         return
     end
 
-    -- 用 context.input 判断是否有相邻数字
-    local input
     local engine = env.engine
-    if engine and engine.context then
-        -- Rime 里一般是 string，保险起见兜个 nil
-        input = engine.context.input or ""
-    end
+    local ctx = engine and engine.context
+    local input = ctx and ctx.input or ""
 
-    -- 如果整条输入串中存在相邻两个数字（例如 "li39"、"abc10" 等），
-    -- 则整体不做任何转换，直接返回，为了配合小键盘输入逻辑中包吃书字面大小一致性
-    if input and input ~= "" and input:match("%d%d") then
+    -- 1. 基础拦截：如果输入包含连续数字（如小键盘），或者首选就是英文，不转换
+    if input:match("%d%d") then return end
+    
+    -- 判断首选是否为纯英文（通过匹配是否全由英文字符组成且不含中文）
+    if cand.text:match("^[%a%p%s]+$") then
         return
     end
 
-    -- 懒加载 tone_map
+    -- 2. 加载配置
+    local cfg = engine and engine.schema and engine.schema.config
+    local aux_symbol = cfg and cfg:get_string("force_upper_aux/symbol")
+    
+    -- 如果没配置 symbol，直接跳过大写转换逻辑
+    if not aux_symbol or aux_symbol == "" then
+        goto tone_only
+    end
+
+    do
+        local preedit = cand.preedit
+        -- 3. 核心逻辑：排除前两位是大写的情况，只转换后续出现的双大写
+        -- ([A-Z][A-Z]+) 匹配后续连续的两个及以上的大写字母。
+        local converted = preedit:gsub("^(..?-?)([A-Z][A-Z]+)", function(prefix, upper)
+            -- 检查前缀是否包含大写字母。如果前缀里有大写，说明可能是英文输入，不转换。
+            if prefix:match("[A-Z]") then
+                return prefix .. upper
+            else
+                return prefix .. aux_symbol
+            end
+        end)
+
+        -- 处理非行首（音节中间或靠后）的双大写
+        -- 比如 "nihaoWS" -> "nihao·"
+        converted = converted:gsub("([^%s%^])([A-Z][A-Z]+)", function(prev, upper)
+            return prev .. aux_symbol
+        end)
+
+        cand.preedit = converted
+    end
+    ::tone_only::
+    -- 4. 数字映射逻辑 (上标转换)
     if not env.tone_map then
         env.tone_map = {}
-        local cfg = engine and engine.schema and engine.schema.config
         if cfg then
             for d = 0, 9 do
                 local k = tostring(d)
                 local v = cfg:get_string("tone_preedit/" .. k)
-                if v and v ~= "" then
-                    env.tone_map[k] = v
-                end
+                env.tone_map[k] = (v and v ~= "") and v or k
             end
         end
     end
 
-    local preedit = cand.preedit
-    local converted = preedit:gsub("([^%d%s]+)(%d+)", function(body, digits)
+    local final_pre = cand.preedit:gsub("([^%d%s]+)(%d+)", function(body, digits)
         local mapped = digits:gsub("%d", function(d)
-            return env.tone_map and env.tone_map[d] or d
+            return env.tone_map[d] or d
         end)
         return body .. mapped
     end)
-
-    if converted ~= preedit then
-        cand.preedit = converted
-    end
+    
+    cand.preedit = final_pre
 end
-
 
 -- ----------------------
 -- 主函数：根据优先级处理候选词的注释和preedit
@@ -391,6 +414,20 @@ function ZH.init(env)
         chaifen = config:get_string("super_comment/chaifen") or "〔chaifen〕",
         candidate_length = tonumber(config:get_string("super_comment/candidate_length")) or 1,
     }
+    -- 动态读取 cand_type 配置
+    env.cand_type_symbols = {}
+    local map = config:get_map("super_comment/cand_type")
+    
+    if map then
+        -- 直接遍历 map 的 keys
+        for _, key in ipairs(map:keys()) do
+            -- 拼接路径去取对应的值，比如 "super_comment/cand_type/user_phrase"
+            local val = config:get_string("super_comment/cand_type/" .. key)
+            if val and val ~= "" then
+                env.cand_type_symbols[key] = val
+            end
+        end
+    end
     CR.init(env)
     SV.init(env)
     CF.init(env)
@@ -573,6 +610,13 @@ function ZH.func(input, env)
             if az_comment and az_comment ~= "" then
                 final_comment = az_comment
             end
+        end
+
+        -- ⑤ 候选词类型符号追加 (动态读取 cand_type 配置)
+        local symbol = env.cand_type_symbols[cand.type]
+        if symbol then
+            -- 必须加 (final_comment or "") 防止原注释为空时 Lua 报错崩溃
+            final_comment = (final_comment or "") .. symbol
         end
 
         -- 应用注释
