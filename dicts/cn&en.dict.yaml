@@ -15,12 +15,7 @@ sort: original  #字典初始排序，可選original或by_weight
 4H	4H
 4X	4X
 7z	7z
-浏览器UA	liú'lǎn'qì'UA
-统信UOS	tǒng'xìn'UOS
-UOM平台	UOM'píng'tái
-CAAC执照	CAAC'zhí'zhào
 +86	jiā'86
-WiFi伴侣	wifi'bàn'lǚ
 AA制	AA'zhì
 A班	A'bān
 A杯	A'bēi
@@ -1345,6 +1340,11 @@ YJ-21	YJ-21
 YJ-83	YJ-83
 YY-20	YY-20
 7-Zip	Zip
+浏览器UA	liú'lǎn'qì'UA
+统信UOS	tǒng'xìn'UOS
+UOM平台	UOM'píng'tái
+CAAC执照	CAAC'zhí'zhào
+WiFi伴侣	wifi'bàn'lǚ
 奔驰EQB	bēn'chí'EQB
 奔驰EQC	bēn'chí'EQC
 奔驰EQE	bēn'chí'EQE
@@ -1474,7 +1474,6 @@ FPV无人机	FPV'wú'rén'jī
 HDMI接口	HDMI'jiē'kǒu
 HHQ-9C	HHQ-9C
 HQ-16C	HQ-16C
-HR人力资源	HR'rén'lì'zī'yuán
 HTML代码	HTML'dài'mǎ
 HTTP请求	HTTP'qǐng'qiú
 IoT物联网	IoT'wù'lián'wǎng
@@ -1483,7 +1482,6 @@ JPEG图片	JPEG'tú'piàn
 JSON数据	JSON'shù'jù
 Java程序	Java'chéng'xù
 Java开发	Java'kāi'fā
-KFC肯德基	KFC'kěn'dé'jī
 KJ-200	KJ-200
 KJ-500	KJ-500
 L8 Max	L'bā'Max
@@ -1586,11 +1584,11 @@ RIME方案	rime'fāng'àn
 15式轻型坦克	15'shì'qīng'xíng'tǎn'kè
 62式轻型坦克	62'shì'qīng'xíng'tǎn'kè
 63式两栖坦克	63'shì'liǎng'qī'tǎn'kè
-80式主战坦克	80'shì'zhǔ'zhàn'tǎn'kè
-85式主战坦克	85'shì'zhǔ'zhàn'tǎn'kè
-88式主战坦克	88'shì'zhǔ'zhàn'tǎn'kè
-96式主战坦克	96'shì'zhǔ'zhàn'tǎn'kè
-99式主战坦克	99'shì'zhǔ'zhàn'tǎn'kè
+80式	80'shì
+85式	85'shì
+88式	88'shì
+96式	96'shì
+99式	99'shì
 ANSYS软件	ANSYS'ruǎn'jiàn
 BZK-005	BZK-005
 Baidu地图	Baidu'dì'tú
@@ -1677,10 +1675,10 @@ RIME输入法	rime'shū'rù'fǎ
 智能ABC双拼	zhì'néng'ABC'shuāng'pīn
 05式两栖突击车	05'shì'liǎng'qī'tū'jī'chē
 63A式两栖坦克	63A'shì'liǎng'qī'tǎn'kè
-96A式主战坦克	96A'shì'zhǔ'zhàn'tǎn'kè
-96B式主战坦克	96B'shì'zhǔ'zhàn'tǎn'kè
-99A式主战坦克	99A'shì'zhǔ'zhàn'tǎn'kè
-99B式主战坦克	99B'shì'zhǔ'zhàn'tǎn'kè
+96A式	96A'shì
+96B式	96B'shì
+99A式	99A'shì
+99B式	99B'shì
 Android版	Android'bǎn
 Android端	Android'duān
 CEO首席执行官	CEO'shǒu'xí'zhí'xíng'guān
