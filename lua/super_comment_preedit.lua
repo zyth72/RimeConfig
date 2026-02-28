@@ -198,11 +198,7 @@ end
 -- ----------------------
 local function get_fz_comment(cand, env, initial_comment)
     local length = utf8.len(cand.text)
-
-    local has_special = initial_comment and (string.find(initial_comment, "~") or string.find(initial_comment, "\226\152\175"))
-    -- 长度过滤：增加一个“如果没有特殊标记”的前提
-    local length = utf8.len(cand.text)
-    if not has_special and length > env.settings.candidate_length then
+    if length > env.settings.candidate_length then
         return ""
     end
     local auto_delimiter = env.settings.auto_delimiter or " "
@@ -581,11 +577,7 @@ function ZH.func(input, env)
                 final_comment = remove_pinyin_tone(fz_comment)
             end
         else
-            if initial_comment and (string.find(initial_comment, "~") or string.find(initial_comment, "\226\152\175")) then --保留尾部临时英文标记
-                final_comment = initial_comment
-            else
-                final_comment = ""
-            end
+            final_comment = ""
         end
 
         -- ② 拆分注释
@@ -615,10 +607,8 @@ function ZH.func(input, env)
         -- ⑤ 候选词类型符号追加 (动态读取 cand_type 配置)
         local symbol = env.cand_type_symbols[cand.type]
         if symbol then
-            -- 必须加 (final_comment or "") 防止原注释为空时 Lua 报错崩溃
             final_comment = (final_comment or "") .. symbol
         end
-
         -- 应用注释
         if final_comment ~= initial_comment then
             genuine_cand.comment = final_comment

@@ -219,8 +219,9 @@ local function apply_formatting(cand, code_ctx)
 end
 
 function F.init(env)
-    env.memory = {}
     local cfg = env.engine.schema.config
+    env.memory = {}
+    env.schema_id = env.engine.schema.schema_id
     env.english_spacing_mode = "off"
     env.spacing_timeout = 0 
     env.lookup_key = "`"
@@ -368,13 +369,14 @@ function F.func(input, env)
         local good_cand = restore_sentence_spacing(cand, env.split_pattern, env.delim_check_pattern)
         local fmt_cand = apply_formatting(good_cand, code_ctx)
         
-        -- 去除注释中的太极符号
-        if fmt_cand.comment and find(fmt_cand.comment, "\226\152\175") then
-            local nc = Candidate(fmt_cand.type, fmt_cand.start, fmt_cand._end, fmt_cand.text, "")
-            nc.preedit = fmt_cand.preedit
-            fmt_cand = nc
+        -- 仅在 wanxiang_english 方案下，去除注释中的太极符号
+        if env.schema_id == "wanxiang_english" then
+            if fmt_cand.comment and find(fmt_cand.comment, "\226\152\175") then
+                local nc = Candidate(fmt_cand.type, fmt_cand.start, fmt_cand._end, fmt_cand.text, "")
+                nc.preedit = fmt_cand.preedit
+                fmt_cand = nc
+            end
         end
-
         local c_type = cand.type
         local is_ascii = is_ascii_phrase_fast(fmt_cand.text) 
         local is_tbl = is_table_type(cand)
