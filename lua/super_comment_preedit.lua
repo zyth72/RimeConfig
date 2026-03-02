@@ -577,7 +577,11 @@ function ZH.func(input, env)
                 final_comment = remove_pinyin_tone(fz_comment)
             end
         else
-            final_comment = ""
+            if initial_comment and string.find(initial_comment, "~") then --保留尾部临时英文标记
+                final_comment = initial_comment
+            else
+                final_comment = ""
+            end
         end
 
         -- ② 拆分注释
@@ -606,7 +610,7 @@ function ZH.func(input, env)
 
         -- ⑤ 候选词类型符号追加 (动态读取 cand_type 配置)
         local symbol = env.cand_type_symbols[cand.type]
-        if symbol then
+        if symbol and final_comment ~= "~" then
             final_comment = (final_comment or "") .. symbol
         end
         -- 应用注释

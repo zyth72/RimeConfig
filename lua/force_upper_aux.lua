@@ -76,6 +76,7 @@ function ForceUpperAux.init(env)
     
     env.on_update = function(ctx)
         -- 调用外部模块函数，如果在功能模式则不记录历史
+        -- 这里 env.is_cycling 起到了锁的作用，防止在按快捷键修改输入时陷入循环
         if env.is_cycling or wanxiang.is_function_mode_active(ctx) then return end
         if not ctx:is_composing() then
             env.history_first = {}
@@ -99,11 +100,20 @@ function ForceUpperAux.init(env)
             end
         end
     end
+    -- 仅在初始化时连接一次
     env.update_conn = env.engine.context.update_notifier:connect(env.on_update)
 end
 
 function ForceUpperAux.fini(env)
-    if env.update_conn then env.update_conn:disconnect() end
+    -- 在 fini 周期内统一断开连接器，并释放大对象引用，避免内存泄漏
+    if env.update_conn then 
+        env.update_conn:disconnect()
+        env.update_conn = nil
+    end
+    env.dict = nil
+    env.aux_cache = nil
+    env.history_first = nil
+    env.snapshot_parts = nil
 end
 
 -- 核心逻辑
@@ -117,7 +127,6 @@ function ForceUpperAux.func(key_event, env)
     local current_key = key_event:repr()
     if current_key == env.trigger_key then
         if not ctx:is_composing() then return 2 end
-        env.update_conn:disconnect()
         
         -- 首次按下捕捉快照
         if env.press_count == 0 then
@@ -133,11 +142,11 @@ function ForceUpperAux.func(key_event, env)
         
         local parts = env.snapshot_parts
         if not parts or #parts == 0 then
-            env.update_conn = ctx.update_notifier:connect(env.on_update)
             return 2 
         end
         
         env.press_count = env.press_count + 1
+        -- 开启循环锁，这样下面修改 ctx.input 触发的 on_update 会被直接拦截
         env.is_cycling = true 
         
         local parts_count = #parts
@@ -155,7 +164,8 @@ function ForceUpperAux.func(key_event, env)
             apply_until = n_minus_1 
         end
         
-        local new_input = ""
+        -- 性能优化：使用表来收集字符串分片，最后使用 table.concat 一次性拼接
+        local new_input_parts = {}
         local text_len = utf8.len(candidate_text) or 0
         for i = 1, parts_count do
             local syl = parts[i]
@@ -163,17 +173,18 @@ function ForceUpperAux.func(key_event, env)
                 local pinyin = syl:sub(1, 2)
                 local char = get_utf8_char(candidate_text, i)
                 local aux = lookup_aux_code(env, char)
-                new_input = new_input .. pinyin .. aux
+                new_input_parts[i] = pinyin .. aux
             else
-                new_input = new_input .. syl
+                new_input_parts[i] = syl
             end
         end
+        local new_input = table.concat(new_input_parts)
         
         if new_input ~= "" and new_input ~= ctx.input then
+            -- 此时修改 input 会触发 on_update，但会被 env.is_cycling == true 完美拦截
             ctx.input = new_input
         end
         
-        env.update_conn = ctx.update_notifier:connect(env.on_update)
         return 1 
     else
         -- 任意其他键按下，重置状态机

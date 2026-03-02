@@ -484,14 +484,13 @@ function f.func(input, env)
                 
                 -- 2. 核心分配逻辑：控制词组取什么数据
                 if cand_len == 1 then
-                    -- 单字反查：需要完整的产物，把 main 和 xlit 临时拼在一起传过去
                     local combined = {}
                     for _, v in ipairs(db_cache[char_str].main) do table.insert(combined, v) end
                     for _, v in ipairs(db_cache[char_str].xlit) do table.insert(combined, v) end
-                    raw_data.db[i] = combined
+                    raw_data.db[i] = (#combined > 0) and combined or nil
                 else
-                    -- 词组反查：只取 main 的数据！彻底把 xlit 的产物隔离在外
-                    raw_data.db[i] = db_cache[char_str].main
+                    local main_data = db_cache[char_str].main
+                    raw_data.db[i] = (main_data and #main_data > 0) and main_data or nil
                 end
             end
         end
