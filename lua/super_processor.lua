@@ -411,12 +411,6 @@ end
 -- [Backspace Limit] 退格限制
 local function handle_backspace(key, env, ctx)
     local kc = key.keycode
-    if not key:release() and ctx.composition:empty() then
-        if kc == 0xff0d or kc == 0xff8d or kc == 0x20 then
-            ctx:set_property("english_spacing", "true") --记下来按键状态给英文自动加空格用
-        end
-    end
-
     if kc ~= 0xFF08 or key:release() then
         env.bs_sequence = false
         env.bs_prev_len = -1
@@ -627,6 +621,15 @@ function M.func(key, env)
     end
 
     local kc = key.keycode
+
+    if ctx.composition:empty() then
+        if kc == 0xff0d or kc == 0xff8d or kc == 0x20 then
+            ctx:set_property("english_spacing", "true") 
+        end
+        if kc == 0x5c or kc == 0x2f then
+            ctx:set_property("force_sticky_code", "true")
+        end
+    end
 
     -- 2. QuickSymbol 拦截 (a-z + /)
     if handle_quick_symbol_intercept(key, env, ctx) then

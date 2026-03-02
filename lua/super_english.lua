@@ -59,7 +59,7 @@ local allowed_ascii_symbols = {
     [43] = true,  -- +
     [46] = true,  -- .
     [63] = true,  -- ?
-    [92] = true,  -- \
+
     [48]=true, [49]=true, [50]=true, [51]=true, [52]=true,
     [53]=true, [54]=true, [55]=true, [56]=true, [57]=true,
 }
@@ -266,6 +266,7 @@ function F.init(env)
             local commit_text = ctx:get_commit_text()
             local text_no_space = gsub(commit_text, "%s", "")
             local is_eng = is_ascii_phrase_fast(text_no_space)
+            
             if find(text_no_space, "[/\\\\]$") then
                 env.sticky_countdown = STICKY_BUFFER_SIZE
                 is_eng = false 
@@ -282,6 +283,7 @@ function F.init(env)
                     is_eng = false
                 end
             end
+            
             env.prev_commit_is_eng = is_eng
             if is_eng then
                 env.last_commit_time = get_now()
@@ -293,6 +295,7 @@ function F.init(env)
         end)
     end
 end
+
 function F.fini(env)
     if env.update_notifier then env.update_notifier:disconnect(); env.update_notifier = nil end
     if env.commit_notifier then env.commit_notifier:disconnect(); env.commit_notifier = nil end
@@ -301,6 +304,13 @@ end
 
 function F.func(input, env)
     local ctx = env.engine.context
+
+    if ctx:get_property("force_sticky_code") == "true" then
+        env.sticky_countdown = STICKY_BUFFER_SIZE
+        env.prev_commit_is_eng = false
+        ctx:set_property("force_sticky_code", "")
+    end
+
     local curr_input = ctx.input
     if not has_letters(curr_input) then
         for cand in input:iter() do
@@ -349,6 +359,7 @@ function F.func(input, env)
 
     local single_char_injected = false
     local single_chars = {}
+    local has_single_chars = false
     
     if code_len == 1 then
         local b = byte(curr_input)
@@ -432,23 +443,14 @@ function F.func(input, env)
         end
     end
 
-    -- 3. 兜底逻辑 (补单字母)
-    if has_single_chars and not single_char_injected then
-        if not best_candidate_saved then
-            env.memory[curr_input] = { text = single_chars[1].text, preedit = single_chars[1].text }
-            best_candidate_saved = true
-        end
-        for _, c in ipairs(single_chars) do yield(c) end
-        has_valid_candidate = true
-    end
-
-    -- [Phase 3] 历史回溯构造 (Strictly fallback)
+    -- [Phase 3] 历史回溯构造 & 统一兜底
     if not has_valid_candidate then
         if env.block_derivation then return end
-        if find(curr_input, "^[/]") then
-            return 
-        end
-        if not env.block_derivation and has_letters(curr_input) then
+        
+        local yielded_derived = false 
+        
+        -- 只有在 wanxiang_english 方案下，才进行英文的回溯派生逻辑
+        if env.schema_id == "wanxiang_english" and has_letters(curr_input) then
             local anchor = nil
             local diff = ""
             for i = #curr_input - 1, 1, -1 do
@@ -461,55 +463,55 @@ function F.func(input, env)
             end
             
             if anchor and diff ~= "" then
-                local has_spacing = find(anchor.text, " ")
-                local last_word = match(anchor.text, "(%S+)%s*$") or ""
-                local last_len = #last_word
-                local output_text = ""
-                local output_preedit = ""
+                local is_code_mode = find(curr_input, "[/\\]") or (env.sticky_countdown > 0)
                 
-                local is_code_mode = find(curr_input, "^[/\\]")
-                
-                if is_ascii_phrase_fast(anchor.text) then
+                if is_code_mode then
+                    -- 代码/路径保护期：内部绝对不加空格，无缝相连！
+                    local output_text = anchor.text .. diff
+                    local output_preedit = (anchor.preedit or anchor.text) .. diff
+                    output_text = apply_segment_formatting(output_text, curr_input)
+                    
+                    local cand = Candidate("completion", 0, #curr_input, output_text, "~")
+                    cand.preedit = output_preedit
+                    cand.quality = 999
+                    yield(cand)
+                    yielded_derived = true 
+                    
+                elseif is_ascii_phrase_fast(anchor.text) then
+                    -- 纯英文模式（含逗号等）
+                    local has_spacing = find(anchor.text, " ")
+                    local last_word = match(anchor.text, "(%S+)%s*$") or ""
+                    local last_len = #last_word
                     local spacer = " "
                     if sub(anchor.text, -1) == " " then spacer = "" end
 
-                    if has_spacing then
-                        output_text = anchor.text .. spacer .. diff
-                        output_preedit = (anchor.preedit or anchor.text) .. spacer .. diff
-                    elseif last_len > 3 then
+                    local output_text = ""
+                    local output_preedit = ""
+
+                    if has_spacing or last_len > 3 then
                         output_text = anchor.text .. spacer .. diff
                         output_preedit = (anchor.preedit or anchor.text) .. spacer .. diff
                     else
                         output_text = curr_input
                         output_preedit = curr_input
                     end
-                elseif is_code_mode then
-                    output_text = anchor.text .. diff
-                    output_preedit = (anchor.preedit or anchor.text) .. diff
-                else
-                    output_text = anchor.text
-                    output_preedit = (anchor.preedit or anchor.text) .. env.delimiter_char .. diff
+                    
+                    output_text = apply_segment_formatting(output_text, curr_input)
+                    local cand = Candidate("completion", 0, #curr_input, output_text, "~")
+                    cand.preedit = output_preedit
+                    cand.quality = 999
+                    yield(cand)
+                    yielded_derived = true
                 end
-                
-                output_text = apply_segment_formatting(output_text, curr_input)
-                
-                local cand = Candidate("completion", 0, #curr_input, output_text, "~")
-                cand.preedit = output_preedit
-                cand.quality = 999
-                yield(cand)
-            else
-                -- [Phase 4] 真正的无解兜底
-                local cand = Candidate("completion", 0, #curr_input, curr_input, "~")
-                cand.preedit = curr_input
-                yield(cand)
             end
-        else
-             -- 特殊符号或被拦截时的兜底
-             local cand = Candidate("completion", 0, #curr_input, curr_input, "~")
-             cand.preedit = curr_input
-             yield(cand)
+        end
+
+        -- [Phase 4] 兜底
+        if not yielded_derived then
+            local cand = Candidate("completion", 0, #curr_input, curr_input, "~")
+            cand.preedit = curr_input
+            yield(cand)
         end
     end
 end
-
 return F
