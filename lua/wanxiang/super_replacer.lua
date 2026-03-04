@@ -594,13 +594,14 @@ function M.func(input, env)
         end
     end
 
-    -- 核心状态变量
+-- 核心状态变量
     local pending_cands = {}
     local seen_texts = {} -- 去重表
     local limit = 10
     local has_phrase = false
-    local cand_count = 0
     local abbrev_triggered = false 
+    local max_q = 0
+    local has_high_q = false
 
     -- [Helper 1] 规则处理封装
     local function process_and_record(cand)
@@ -661,86 +662,58 @@ function M.func(input, env)
                 end
             end
         end
-        abbrev_triggered = true
     end
 
-    -- [主循环]
+    -- 主循环
     for cand in input:iter() do
-        cand_count = cand_count + 1
-        local q = cand.quality or 0
-        
-        if cand.type == "phrase" then has_phrase = true end
-        
-        -- 1. [权重跳水/插队检测]
-        if not abbrev_triggered and q < HIGH_THRESHOLD and #pending_cands > 0 then
-            local max_q = 0
-            local has_high_q = false
-            for _, pc in ipairs(pending_cands) do 
-                local pq = pc.quality or 0
-                if pq > max_q then max_q = pq end
-                if pq > HIGH_THRESHOLD then has_high_q = true end
-            end
-            
-            if has_high_q then
-                for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                pending_cands = {}
-                if not has_phrase then
-                    try_trigger_abbrev_logic(true, max_q - 0.001)
-                end
-            end
+        if cand.type == "phrase" or cand.type == "user_phrase" then 
+            has_phrase = true 
         end
-
-        -- 2. [基础缓存逻辑]
-        if cand_count <= limit then
-            table.insert(pending_cands, cand)
-        else
-            if cand_count == limit + 1 then
-                local has_high_q = false
-                for _, pc in ipairs(pending_cands) do 
-                    if (pc.quality or 0) > HIGH_THRESHOLD then 
-                        has_high_q = true 
-                        break
-                    end
-                end
-                
-                if not abbrev_triggered then
-                    try_trigger_abbrev_logic(not has_phrase, has_high_q and 99 or 9999) 
-                end
-                for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                pending_cands = nil
-            end
+        
+        if abbrev_triggered then
             process_and_record(cand)
+        else
+            local q = cand.quality or 0
+            if q > max_q then max_q = q end
+            if q >= HIGH_THRESHOLD then has_high_q = true end
+            if (has_high_q and q < HIGH_THRESHOLD) or (#pending_cands >= limit) then
+                
+                if has_high_q then
+                    for _, pc in ipairs(pending_cands) do process_and_record(pc) end
+                    
+                    if not has_phrase then
+                        try_trigger_abbrev_logic(true, HIGH_THRESHOLD - 0.001)
+                    end
+                    process_and_record(cand)
+                else
+                    if not has_phrase then
+                        try_trigger_abbrev_logic(true, 999)
+                    end
+                    for _, pc in ipairs(pending_cands) do process_and_record(pc) end
+                    process_and_record(cand)
+                end
+                abbrev_triggered = true
+                pending_cands = {} 
+            else
+                table.insert(pending_cands, cand)
+            end
         end
     end
-
-    -- 3. [收尾阶段]
-    if pending_cands then
-        if not abbrev_triggered then
-            local max_q = 0
-            local has_high_q = false
-            for _, pc in ipairs(pending_cands) do 
-                local pq = pc.quality or 0
-                if pq > max_q then max_q = pq end
-                if pq > HIGH_THRESHOLD then has_high_q = true end
+    -- [收尾阶段] 
+    if not abbrev_triggered and #pending_cands > 0 then
+        if has_high_q then
+            for _, pc in ipairs(pending_cands) do process_and_record(pc) end
+            if not has_phrase then
+                try_trigger_abbrev_logic(true, HIGH_THRESHOLD - 0.001)
             end
-
-            if has_high_q then
-                for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                if not has_phrase then
-                    try_trigger_abbrev_logic(true, max_q - 0.001)
-                end
-            else
-                if not has_phrase then
-                    try_trigger_abbrev_logic(true, 9999)
-                end
-                for _, pc in ipairs(pending_cands) do process_and_record(pc) end
+        else
+            if not has_phrase then
+                try_trigger_abbrev_logic(true, 9999)
             end
-            pending_cands = nil
-        end
-
-        if pending_cands then
             for _, pc in ipairs(pending_cands) do process_and_record(pc) end
         end
+        abbrev_triggered = true
+        pending_cands = {}
     end
 end
 return M
