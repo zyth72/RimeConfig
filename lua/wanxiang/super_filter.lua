@@ -436,7 +436,7 @@ function M.init(env)
     env.enable_taichi_filter = (schema_id == "wanxiang" or schema_id == "wanxiang_pro")
     env.page_cache = {}
     
-    -- 【新增】用于2码记录、3码单字兜底的轻量级状态
+    -- 用于2码记录、3码单字兜底的轻量级状态
     env.last_2code_char = nil 
 end
 
@@ -483,7 +483,7 @@ function M.func(input, env)
     -- 1. 快速环境检查
     if not code or code == "" or (comp and comp:empty()) then
         env.cache, env.locked = nil, false
-        -- 【新增】清空兜底缓存
+        -- 清空兜底缓存
         env.last_2code_char = nil 
     end
 

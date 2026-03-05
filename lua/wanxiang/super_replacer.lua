@@ -457,11 +457,16 @@ function M.init(env)
 end
 
 function M.fini(env)
-    -- 我们只是断开当前 env 对全局 db 的引用
     env.db = nil
 end
-
--- [Core Function] 核心逻辑 (保持原有逻辑不变)
+local shared_pending = {}
+local shared_comments = {}
+local function clear_table(t)
+    for i = 1, #t do
+        t[i] = nil
+    end
+end
+-- [Core Function] 核心逻辑
 function M.func(input, env)
     local ctx = env.engine.context
     local input_code = ctx.input
@@ -474,6 +479,9 @@ function M.func(input, env)
     local input_type = "unknown"
     if not ctx:is_composing() or ctx.input == "" then
         fmm_cache = {}
+        collectgarbage("step", 200)
+        for cand in input:iter() do yield(cand) end
+        return
     end
     -- 如果数据库未连接，直接透传
     if not env.types or #env.types == 0 or not env.db then
@@ -494,8 +502,8 @@ function M.func(input, env)
         local show_main = true
         local current_main_comment = cand.comment
       
-        local pending_candidates = {}
-        local comments = {}
+        clear_table(shared_pending)
+        clear_table(shared_comments)
       
         for _, t in ipairs(types) do
             if t.mode ~= "abbrev" then
@@ -532,7 +540,7 @@ function M.func(input, env)
                         if mode == "comment" then
                             local parts = {}
                             for p in s_gmatch(val, split_pat) do insert(parts, p) end
-                            insert(comments, concat(parts, " "))
+                            insert(shared_comments, concat(parts, " "))
                           
                         elseif mode == "replace" then
                             if is_chain then
@@ -544,18 +552,18 @@ function M.func(input, env)
                                         elseif t.comment_mode == "text" then current_main_comment = cand.text end
                                         first = false
                                     else
-                                        insert(pending_candidates, { text=p, comment=rule_comment })
+                                        insert(shared_pending, { text=p, comment=rule_comment })
                                     end
                                 end
                             else
                                 show_main = false
                                 for p in s_gmatch(val, split_pat) do
-                                    insert(pending_candidates, { text=p, comment=rule_comment })
+                                    insert(shared_pending, { text=p, comment=rule_comment })
                                 end
                             end
                         elseif mode == "append" then
                             for p in s_gmatch(val, split_pat) do
-                                insert(pending_candidates, { text=p, comment=rule_comment })
+                                insert(shared_pending, { text=p, comment=rule_comment })
                             end
                         end
                     end
@@ -563,8 +571,8 @@ function M.func(input, env)
             end
         end
 
-        if #comments > 0 then
-            local comment_str = concat(comments, " ")
+        if #shared_comments > 0 then
+            local comment_str = concat(shared_comments, " ")
             local fmt = s_format(comment_fmt, comment_str)
             if cand.comment and cand.comment ~= "" then
                 cand.comment = cand.comment .. fmt
@@ -584,7 +592,7 @@ function M.func(input, env)
             end
         end
 
-        for _, item in ipairs(pending_candidates) do
+        for _, item in ipairs(shared_pending) do
             if not (show_main and item.text == current_text) then
                 local nc = Candidate("derived", cand.start, cand._end, item.text, item.comment)
                 nc.preedit = cand.preedit
@@ -594,25 +602,24 @@ function M.func(input, env)
         end
     end
 
--- 核心状态变量
+    -- 核心状态变量
     local pending_cands = {}
-    local seen_texts = {} -- 去重表
-    local limit = 10
+    local seen_texts = {}
+    local limit = 15
     local has_phrase = false
     local abbrev_triggered = false 
     local max_q = 0
-    local has_high_q = false
 
-    -- [Helper 1] 规则处理封装
     local function process_and_record(cand)
         seen_texts[cand.text] = true
         process_rules(cand)
     end
 
-    -- [Helper 2] 融合后的简码逻辑
-    local function try_trigger_abbrev_logic(is_empty_override, target_quality)
+    -- [Helper] （融合了 always/lazy 判断）
+    local function trigger_abbrev_if_needed(force_top)
         for _, t in ipairs(types) do
             if t.mode == "abbrev" and input_type ~= "pinyin" then
+                -- 1. 检查 Tag
                 local is_tag_match = true
                 if t.tags then
                     is_tag_match = false
@@ -622,38 +629,32 @@ function M.func(input, env)
                 end
 
                 if is_tag_match then
-                    local lazy_switch = t.triggers[1]
-                    local always_switch = t.triggers[2]
-                    local active_mode = "none"
-
-                    if always_switch then
-                        if always_switch == true or (type(always_switch) == "string" and ctx:get_option(always_switch)) then
-                            active_mode = "always"
+                    local lazy = false
+                    local always = false
+                    
+                    for _, trigger in ipairs(t.triggers) do
+                        if trigger == true or (type(trigger) == "string" and ctx:get_option(trigger)) then
+                            -- 根据开关名称包含的关键字进行智能路由
+                            if type(trigger) == "string" and s_match(trigger, "lazy") then
+                                lazy = true
+                            else
+                                -- 如果名称带有 always，或纯 true，或自定义名称，默认视为 always
+                                always = true
+                            end
                         end
                     end
-                    if active_mode == "none" and lazy_switch then
-                        if lazy_switch == true or (type(lazy_switch) == "string" and ctx:get_option(lazy_switch)) then
-                            active_mode = "lazy"
-                        end
-                    end
 
-                    local should_trigger = false
-                    if active_mode == "always" then should_trigger = true
-                    elseif active_mode == "lazy" and is_empty_override then should_trigger = true
-                    end
-
-                    if should_trigger then
+                    -- 3. 核心决断：lazy 遇词组则死，always 无视词组
+                    if (lazy and not has_phrase) or always then
                         local key = t.prefix .. input_code
-                        local val = db:fetch(key)
-                        if not val and not s_match(input_code, "[A-Z]") then
-                            val = db:fetch(t.prefix .. s_upper(input_code))
-                        end
+                        local val = db:fetch(key) or (not s_match(input_code, "[A-Z]") and db:fetch(t.prefix .. s_upper(input_code)))
                         
                         if val then
+                            local target_q = force_top and 9999 or (HIGH_THRESHOLD - 0.001)
                             for p in s_gmatch(val, split_pat) do
                                 if not seen_texts[p] then
                                     local abbrev_cand = Candidate("abbrev", 0, #input_code, p, "")
-                                    abbrev_cand.quality = target_quality
+                                    abbrev_cand.quality = target_q
                                     process_and_record(abbrev_cand)
                                 end
                             end
@@ -664,56 +665,48 @@ function M.func(input, env)
         end
     end
 
-    -- 主循环
+    -- [主循环]
     for cand in input:iter() do
-        if cand.type == "phrase" or cand.type == "user_phrase" then 
-            has_phrase = true 
-        end
-        
         if abbrev_triggered then
             process_and_record(cand)
         else
+            if cand.type == "phrase" or cand.type == "user_phrase" then has_phrase = true end
             local q = cand.quality or 0
             if q > max_q then max_q = q end
-            if q >= HIGH_THRESHOLD then has_high_q = true end
+            
+            local has_high_q = (max_q >= HIGH_THRESHOLD)
+
+            -- 结算条件：发生权重跳水（好词出完了） 或 达到缓存上限
             if (has_high_q and q < HIGH_THRESHOLD) or (#pending_cands >= limit) then
-                
                 if has_high_q then
+                    -- 有 99 的词：先把 99 的词出完，再出简码
                     for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                    
-                    if not has_phrase then
-                        try_trigger_abbrev_logic(true, HIGH_THRESHOLD - 0.001)
-                    end
-                    process_and_record(cand)
+                    trigger_abbrev_if_needed(false)
                 else
-                    if not has_phrase then
-                        try_trigger_abbrev_logic(true, 999)
-                    end
+                    -- 全是低权重字：简码直接霸榜置顶，再出原候选
+                    trigger_abbrev_if_needed(true)
                     for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-                    process_and_record(cand)
                 end
+                
+                -- 把当前触发跳水的 cand 也输出，并标记结算完毕
+                process_and_record(cand)
                 abbrev_triggered = true
                 pending_cands = {} 
             else
-                table.insert(pending_cands, cand)
+                insert(pending_cands, cand)
             end
         end
     end
-    -- [收尾阶段] 
+
+    -- [收尾阶段]
     if not abbrev_triggered and #pending_cands > 0 then
-        if has_high_q then
+        if max_q >= HIGH_THRESHOLD then
             for _, pc in ipairs(pending_cands) do process_and_record(pc) end
-            if not has_phrase then
-                try_trigger_abbrev_logic(true, HIGH_THRESHOLD - 0.001)
-            end
+            trigger_abbrev_if_needed(false)
         else
-            if not has_phrase then
-                try_trigger_abbrev_logic(true, 9999)
-            end
+            trigger_abbrev_if_needed(true)
             for _, pc in ipairs(pending_cands) do process_and_record(pc) end
         end
-        abbrev_triggered = true
-        pending_cands = {}
     end
 end
 return M
