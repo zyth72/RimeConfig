@@ -230,6 +230,8 @@ function F.init(env)
     env.spacing_timeout = 0 
     env.lookup_key = "`"
     env.max_eng_cands = 0
+    env.pair_symbol = "\\"
+    local delimiter_str = " '" 
     if cfg then
         local str = cfg:get_string("wanxiang_english/english_spacing")
         if str then env.english_spacing_mode = str end
@@ -239,12 +241,11 @@ function F.init(env)
         if key and key ~= "" then env.lookup_key = key end
         local max_cands = cfg:get_int("wanxiang_english/max_candidates")
         if max_cands then env.max_eng_cands = max_cands end
-    end
-    env.lookup_key_esc = gsub(env.lookup_key, "([%%%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-    local delimiter_str = " '" 
-    if cfg then
+        local sym = cfg:get_string("wanxiang_english/trigger")
+        if sym and #sym > 0 then env.pair_symbol = sub(sym, 1, 1) end
         delimiter_str = cfg:get_string('speller/delimiter') or delimiter_str
     end
+    env.lookup_key_esc = gsub(env.lookup_key, "([%%%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
     env.delimiter_char = sub(delimiter_str, 1, 1)
     local escaped_delims = gsub(delimiter_str, "([%%%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
     env.split_pattern = "[^" .. escaped_delims .. "]+"     
@@ -319,6 +320,7 @@ function F.func(input, env)
     end
 
     local curr_input = ctx.input
+    local symbol = env.pair_symbol
     if not has_letters(curr_input) then
         for cand in input:iter() do
             yield(cand)
@@ -331,7 +333,7 @@ function F.func(input, env)
     local code_len = #curr_input
 
     -- [Feature] 强制英文造词
-    if code_len > 2 and sub(curr_input, -2) == "\\\\" then
+    if code_len > 2 and sub(curr_input, -2) == symbol .. symbol then
         local raw_text = sub(curr_input, 1, code_len - 2)
         if is_ascii_phrase_fast(raw_text) then
             if ctx.composition and not ctx.composition:empty() then
@@ -510,7 +512,11 @@ function F.func(input, env)
                 local is_code_mode = find(curr_input, "[/\\]") or (env.sticky_countdown > 0)
                 
                 if is_code_mode then
-                    local output_text = anchor.text .. diff
+                    local clean_diff = diff
+                    if sub(clean_diff, -1) == symbol then
+                        clean_diff = sub(clean_diff, 1, -2)
+                    end
+                    local output_text = anchor.text .. clean_diff
                     local output_preedit = (anchor.preedit or anchor.text) .. diff
                     output_text = apply_segment_formatting(output_text, curr_input)
                     
@@ -550,7 +556,11 @@ function F.func(input, env)
 
         -- [Phase 4] 兜底
         if not yielded_derived then
-            local cand = Candidate("completion", 0, #curr_input, curr_input, "~")
+            local text = curr_input
+            if sub(text, -1) == symbol then
+                text = sub(text, 1, -2)
+            end
+            local cand = Candidate("completion", 0, #curr_input, text, "~")
             cand.preedit = curr_input
             yield(cand)
         end
