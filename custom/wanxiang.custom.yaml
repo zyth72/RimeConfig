@@ -81,19 +81,15 @@ patch:
         prefix: "_s2tw_"
         files:
           - lua/data/TWVariants.txt
-      - option: abbrev_lazy
-        mode: abbrev          # <--- 新增的简码模式
-        tags: [abc]
-        prefix: "_al_"
+      - option: abbrev      # 对应上面开关名称
+        mode: abbrev
+        prefix: "_abbr_"
+        abbrev_rule: "1,6"  
+        # 前置数量1，前置位置6,数量说的是你维护得数据库编码后面分割了几个词前几个要前置显示,位置说的是你要前置到第二候选还是第几
+        # 然后空码或只有英文等自定义词组的时候直接全部兜底显示,这个新的设计简化的应用层面,我们只需要维护一个数据库即可.
         files:
-          - lua/data/abbrev_lazy.txt # 格式：zm\t怎么|在吗
-      - option: abbrev_always
-        mode: abbrev          # <--- 新增的简码模式
-        tags: [abc]
-        #conv: "abcdefghijklmnopqrstuvwxyz>ABCDEFGHIJKLMNOPQRSTUVWXYZ" #从txt里编码转换为实际打字需要的编码，例如九键维护用字母加载数据库变数字
-        prefix: "_aa_"
-        files:
-          - lua/data/abbrev_always.txt # 格式：zm\t怎么|在吗
+          - lua/data/abbrev.txt
+          - lua/data/chengyu.txt
   # 字符集过滤lua
   # a,通用规范汉字表
   # b,GB2312,
@@ -141,9 +137,6 @@ patch:
     #小键盘数字处理逻辑
     #  "compose" : 小键盘数字始终不上屏参与编码
     #  "auto"    : 输入中 push，空闲时 commit（默认）
-
-  #成语简码前置位置，只能设置在第一页，大于当前页数量则默认在最后一个，0代表关闭前置
-  idiom_preposition: 0
 
   #shijian:仅仅作为提示使用，编码已经写死，引导键可以在key_binder下修改前缀
   #时间：osj 或者 /sj
