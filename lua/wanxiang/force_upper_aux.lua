@@ -24,7 +24,9 @@ end
 local function get_delimiters(ctx)
     local cfg = ctx.engine and ctx.engine.schema and ctx.engine.schema.config
     local delimiter = (cfg and cfg:get_string("speller/delimiter")) or " '"
-    return delimiter:sub(1, 1), delimiter:sub(2, 2)
+    local d1 = get_utf8_char(delimiter, 1) or " "
+    local d2 = get_utf8_char(delimiter, 2) or "'"
+    return d1, d2
 end
 
 -- 转义正则符号
@@ -170,7 +172,9 @@ function ForceUpperAux.func(key_event, env)
         for i = 1, parts_count do
             local syl = parts[i]
             if i <= apply_until and i <= text_len then
-                local pinyin = syl:sub(1, 2)
+                local pinyin_offset = utf8.offset(syl, 3)
+                local pinyin = pinyin_offset and string.sub(syl, 1, pinyin_offset - 1) or syl
+                
                 local char = get_utf8_char(candidate_text, i)
                 local aux = lookup_aux_code(env, char)
                 new_input_parts[i] = pinyin .. aux
@@ -194,5 +198,4 @@ function ForceUpperAux.func(key_event, env)
         return 2 
     end
 end
-
 return ForceUpperAux

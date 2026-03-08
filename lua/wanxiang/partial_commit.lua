@@ -8,19 +8,30 @@ local M = {}
 local DIGIT = { [0x31]=1,[0x32]=2,[0x33]=3,[0x34]=4,[0x35]=5,[0x36]=6,[0x37]=7,[0x38]=8,[0x39]=9,[0x30]=10 }
 local KP    = { [0xFFB1]=1,[0xFFB2]=2,[0xFFB3]=3,[0xFFB4]=4,[0xFFB5]=5,[0xFFB6]=6,[0xFFB7]=7,[0xFFB8]=8,[0xFFB9]=9,[0xFFB0]=10 }
 
--- 工具：字符串缩略 / 获取分隔符 / 安全转义 / 清洗 raw
+-- 工具：安全获取 UTF-8 字符
+local function get_utf8_char(str, index)
+    if not str or str == "" then return nil end
+    local start_byte = utf8.offset(str, index)
+    if not start_byte then return nil end
+    local end_byte = utf8.offset(str, index + 1)
+    return string.sub(str, start_byte, (end_byte and end_byte - 1) or nil)
+end
+
+-- 工具：字符串缩略
 local function short(s)
     if not s then return "" end
-    if #s > 120 then
-        return s:sub(1, 117) .. "..."
+    local offset = utf8.offset(s, 118)
+    if offset then
+        return s:sub(1, offset - 1) .. "..."
     end
     return s
 end
 
+-- 工具：获取分隔符
 local function get_delimiters(ctx)
     local cfg = ctx.engine and ctx.engine.schema and ctx.engine.schema.config
     local delimiter = (cfg and cfg:get_string("speller/delimiter")) or " '"
-    return delimiter:sub(1, 1), delimiter:sub(2, 2)  -- auto, manual
+    return get_utf8_char(delimiter, 1) or " ", get_utf8_char(delimiter, 2) or "'"
 end
 
 -- 放进字符类 [...] 使用的转义（只转义 % ^ ] -）
@@ -29,33 +40,29 @@ local function esc_class(c)
     return (c:gsub("([%%%^%]%-])", "%%%1"))
 end
 
--- 普通模式串位置的单字符转义（最小化：仅非字母数字下划线时转义）
-local function esc_pat(c)
-    if not c or c == "" then return "" end
-    if c:match("[%w_]") then return c end
-    return (c:gsub("(%W)", "%%%1"))
+-- 普通模式串位置的单字符转义
+local function esc_pat(s)
+    if not s or s == "" then return "" end
+    return (s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
 end
 
--- 清洗整串 raw：去掉手动分隔符（如 "'"）
+-- 清洗整串 raw：去掉手动分隔符
 local function clean_raw(ctx, raw)
     if not raw or raw == "" then return "" end
     local _, manual = get_delimiters(ctx)
-    if manual and #manual == 1 then
+    if manual and manual ~= "" then
         raw = raw:gsub(esc_pat(manual), "")
     end
     return raw
 end
 
--- 取候选前 n 个字符
+-- 取候选前 n 个字符 (优化点：使用原生 utf8 库替代手写位运算，更安全高效)
 local function utf8_head(s, n)
-    local i, c = 1, 0
-    while i <= #s and c < n do
-        local b = s:byte(i)
-        i = i + ((b < 0x80) and 1 or ((b < 0xE0) and 2 or ((b < 0xF0) and 3 or 4)))
-        c = c + 1
-    end
-    return s:sub(1, i - 1)
+    if not s or s == "" or n <= 0 then return "" end
+    local offset = utf8.offset(s, n + 1)
+    return offset and s:sub(1, offset - 1) or s
 end
+
 -- 生成 target：按分隔符切 preedit/script_text，取前 n 个并去分隔符拼接
 local function script_prefix(ctx, n)
     local raw_in    = ctx.input or ""
@@ -82,12 +89,12 @@ local function script_prefix(ctx, n)
     local target = table.concat({ table.unpack(parts, 1, upto) }, "")
     return target
 end
+
 -- 对齐“去分隔符后的 raw_clean”与 target；返回消耗长度（基于 raw_clean）
 local function eat_len_by_target(ctx, target)
     if target == "" then return 0 end
     local raw = ctx.input or ""
     if raw == "" then return 0 end
-
     local clean = clean_raw(ctx, raw)
     local i, j, Lc, Lt = 1, 1, #clean, #target
     while i <= Lc and j <= Lt do
