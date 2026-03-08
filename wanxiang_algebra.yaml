@@ -115,7 +115,7 @@ base:
       # 其他
       - derive/ong$/on/ # lon → long
       - derive/([tl])eng$/$1en/ # ten → teng
-
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
 
 
   自然码: 
@@ -190,6 +190,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   自然龙:      #原作者项目地址： https://github.com/rimeinn/rime-zrlong
     __append:
       - xform/Ⅺ//  #用于Lua判断输入类型的标记
@@ -253,6 +254,7 @@ base:
       - xform/^(.)(ū|u|óu|iàn)$/$1A/
       - xform/^(.)(āo|ao|iè)$/$1Q/
       - xlit/QWERTYUIOPASDFGHMJCKLZXVBN/qwertyuiopasdfghmjcklzxvbn/
+
   汉心龙:    #原作者项目地址： https://hanxinma.gitlab.io/longma/
     __append:
       - xform/Ⅻ//  #用于Lua判断输入类型的标记
@@ -324,7 +326,7 @@ base:
       - xform/^(.)(ài|ián|üě|uě|uí|uǎn|uàng|ǘ)$/$1B/
       - xform/^(.)(í|iǎng|ǎn)$/$1N/
       - xform/^(.)(ú|iāng|iang|ěng|ǔn)$/$1M/
-      - xlit/QWERTYUIOPASDFGHMJCKLZXVBN/qwertyuiopasdfghmjcklzxvbn/
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
 
 
   小鹤双拼: 
@@ -399,6 +401,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   搜狗双拼: 
     __append:
       - xform/Ⅴ//  #用于Lua判断输入类型的标记
@@ -472,6 +475,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   微软双拼: 
     __append:
       - xform/Ⅳ//  #用于Lua判断输入类型的标记
@@ -546,6 +550,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   智能ABC:
     __append:
       - xform/Ⅵ//  #用于Lua判断输入类型的标记
@@ -616,6 +621,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   紫光双拼:
     __append:
       - xform/Ⅶ//  #用于Lua判断输入类型的标记
@@ -688,7 +694,7 @@ base:
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
       #- abbrev/^([a-z]).+$/$1/   #简拼
-
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   拼音加加:
     __append:
       - xform/Ⅷ//  #用于Lua判断输入类型的标记
@@ -760,6 +766,7 @@ base:
       - xlit/ⓆⓌⓇⓉⓎⓊⒾⓄⓅⓈⒹⒻⒼⒽⓂⒿⒸⓀⓁⓏⓍⓋⒷⓃ/qwrtyuiopsdfghmjcklzxvbn/
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   国标双拼:
     __append:
       - xform/Ⅸ//  #用于Lua判断输入类型的标记
@@ -830,7 +837,7 @@ base:
       - xlit/ⓆⓌⓇⓉⓎⓊⒾⓄⓅⓈⒹⒻⒼⒽⒿⓀⓁⓏⓍⒸⓋⒷⓃⓂ/qwrtyuiopsdfghjklzxcvbnm/
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
-
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   万象双拼:
     __append:
       - xform/Ⅸ//  #用于Lua判断输入类型的标记
@@ -900,10 +907,9 @@ base:
       - xform/^(.)ou(\d)$/$1Ⓒ$2/
       - xform/^(.)an(\d)$/$1Ⓕ$2/
       - xlit/ⓆⓌⓇⓉⓎⓊⒾⓄⓅⓈⒹⒻⒼⒽⓂⒿⒸⓀⓁⓏⓍⓋⒷⓃ/qwrtyuiopsdfghmjcklzxvbn/
-      #- xform/^(aj|ak|al|ob|ez|ef)(\d?)$//  # 释放非原本自然码规则
       - derive/^(..)(\d)$/$1/
       - derive/^(.).+(\d)$/$1$2/
-
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
   乱序17:
     __append:
       - xform/Ⅼ//  #用于Lua判断输入类型的标记
@@ -958,6 +964,7 @@ base:
       - xform/u$/Ⓓ/
       - xform/v$/Ⓧ/
       - xlit/ⓆⓌⒺⓇⓉⓎⓄⓅⒶⓈⒹⒻⒼⒽⒿⓀⓁⓏⓍⒸⓋⒷⓃⓂ/qwertyopasdfghjklzxcvbnm/
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
 #pro版本转写段落
 pro:
   全拼: 
@@ -1788,6 +1795,7 @@ pro:
       - derive|^(.*?)(\d?);.*?,(\w)(\w).*$|$1$3$4o| # 双拼\+2位辅助码\+o，主要用来应对小企鹅这类输入法没法使用符号的场景，但同时有些辅助码会出现异常，如：ui uio>uiuio，手机小企鹅使用时开启
       - erase/^(.+);(.+)$/    # 删除原始编码加速检索
       - xform/◯/;/  #对于微软双拼、搜狗双拼，前面将分号保护了起来，现在放出来让其发挥作用
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
       # 变体1：转第5位大写 (ab1Cd)
       - derive|^(..)(\d)([a-z])([a-z]?)$|$1$2\u$3$4|
       # 变体2：转第5位大写 (ab1cD)
@@ -1825,6 +1833,7 @@ pro:
       - derive|^(.*?)(\d?);.*?,(\w)(\w).*$|$1$2/$3$4| # 双拼+直接声调+/间接2位辅助码的情况
       - erase/^(.+);(.+)$/    # 删除原始编码加速检索
       - xform/◯/;/  #对于微软双拼、搜狗双拼，前面将分号保护了起来，现在放出来让其发挥作用
+      - xlit/AEQWRTYUIOPSDFGHMJCKLZXVBN/aeqwrtyuiopsdfghmjcklzxvbn/
       # 以下直接大写辅助
       - derive|^(..)(\d?)/([a-z])([a-z]?)$|$1$2\u$3\u$4|
       - derive|^(..)(\d?)/([a-z])([a-z]?)$|$1\u$3$2\u$4|
