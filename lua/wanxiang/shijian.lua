@@ -2404,10 +2404,19 @@ local function get_upcoming_holidays()
 end
 
 -- 下面这个用于统一生成候选的逻辑
-local function generate_candidates(input, seg, candidates)
+local function generate_candidates(input, alias, seg, candidates)
+    local prefix = ""
+    if input:match("^%d") then
+        prefix = "o"
+    elseif input:match("^/%d") then
+        prefix = "/"
+    end
     for _, item in ipairs(candidates) do
-        local candidate = Candidate(input, seg.start, seg._end, item[1], item[2])
-        candidate.quality = 1000000 -- 设定高优先级
+        local candidate = Candidate("shijian", seg.start, seg._end, item[1], item[2])
+        candidate.quality = 1000000
+        if prefix ~= "" then
+            candidate.preedit = prefix .. alias
+        end
         yield(candidate)
     end
 end
@@ -2507,7 +2516,7 @@ local function translator(input, seg, env)
                                 table.insert(candidates, { processed, "" })
                             end
                         end
-                        generate_candidates(input, seg, candidates)
+                        generate_candidates(input, "shijian", seg, candidates)
                         handled = true
                     end
                 end
@@ -2532,7 +2541,7 @@ local function translator(input, seg, env)
                     for i = 1, #lunar do
                         candidates[#candidates + 1] = { lunar[i][1], lunar[i][2] }
                     end
-                    generate_candidates(input, seg, candidates)
+                    generate_candidates(input, "shijian", seg, candidates)
                     handled = true
                 end
             end
@@ -2577,8 +2586,7 @@ local function translator(input, seg, env)
         local ymdh = os.date("%Y%m%d%H") -- 年月日时
         local num_year = string.format(" 〔%03d/%d〕", today.yday, IsLeap(today.year)) -- 年内第几天/总天数
 
-        -- 读取自定义日期格式
-        local date_variants = {}
+        local candidates = {}
         local custom_formats = config:get_list("date_formats")
         
         if custom_formats and custom_formats.size > 0 then
@@ -2586,12 +2594,12 @@ local function translator(input, seg, env)
                 local format_str = custom_formats:get_value_at(i-1):get_string()
                 local formatted_date = format_dt(today, format_str)
                 if formatted_date and formatted_date ~= "" then
-                    table.insert(date_variants, { formatted_date, "" })
+                    table.insert(candidates, { formatted_date, "" }) 
                 end
             end
         else
             -- 如果没有自定义配置，使用默认格式
-            date_variants = {
+            candidates = { 
                 -- 带前导零的格式
                 { os.date("%Y年%m月%d日"), "" },
                 { os.date("%Y.%m.%d"), "" },
@@ -2618,10 +2626,9 @@ local function translator(input, seg, env)
         
         -- 合并日期格式和农历格式
         for _, variant in ipairs(lunar_variants) do
-            table.insert(date_variants, variant)
+            table.insert(candidates, variant) 
         end
-        
-        generate_candidates("date", seg, date_variants)
+        generate_candidates(input, "rq", seg, candidates)
         set_prompt_if_invalid(context, num_year)
         return
     end
@@ -2640,7 +2647,7 @@ local function translator(input, seg, env)
         -- 状态 1：正在输入数字
         if pending_num then
             local hint = string.format("差值%s天 (从前按 -/o，未来按 +/p/=)", pending_num)
-            generate_candidates("date", seg, { { hint, "等待输入..." } })
+            generate_candidates("shijian", seg, { { hint, "等待输入..." } })
             return
         end
 
@@ -2666,7 +2673,7 @@ local function translator(input, seg, env)
         local num_year = string.format(" 〔%03d/%d〕", today.yday, IsLeap(today.year))
 
         -- 格式生成逻辑
-        local date_variants = {}
+        local candidates = {}
         local custom_formats = config:get_list("date_formats")
         
         if custom_formats and custom_formats.size > 0 then
@@ -2674,12 +2681,12 @@ local function translator(input, seg, env)
                 local format_str = custom_formats:get_value_at(i-1):get_string()
                 local formatted_date = format_dt(today, format_str)
                 if formatted_date and formatted_date ~= "" then
-                    table.insert(date_variants, { formatted_date, "" })
+                    table.insert(candidates, { formatted_date, "" })
                 end
             end
         else
             -- 默认格式
-            date_variants = {
+            candidates = {
                 { os.date("%Y年%m月%d日", target_ts), "" },
                 { os.date("%Y.%m.%d", target_ts), "" },
                 { os.date("%Y-%m-%d", target_ts), "" },
@@ -2702,10 +2709,10 @@ local function translator(input, seg, env)
         }
         
         for _, variant in ipairs(lunar_variants) do
-            table.insert(date_variants, variant)
+            table.insert(candidates, variant)
         end
         
-        generate_candidates("date", seg, date_variants)
+        generate_candidates(input, "rc", seg, candidates)
         set_prompt_if_invalid(context, num_year)
         return
     end
@@ -2718,7 +2725,7 @@ local function translator(input, seg, env)
         local time_discrpt = " 〔" .. GetLunarSichen(os.date("%H"), 1) .. "〕"
 
         -- 优先读 YAML 里的 time_formats
-        local time_variants = {}
+        local candidates = {}
         local custom_time_formats = config:get_list("time_formats")
 
         if custom_time_formats and custom_time_formats.size > 0 then
@@ -2726,12 +2733,12 @@ local function translator(input, seg, env)
                 local fmt = custom_time_formats:get_value_at(i - 1):get_string()
                 local formatted = format_dt(now, fmt)
                 if formatted and formatted ~= "" then
-                    table.insert(time_variants, { formatted, "" })
+                    table.insert(candidates, { formatted, "" })
                 end
             end
         else
             -- 没配就走默认
-            time_variants = {
+            candidates = {
                 { os.date("%H:%M"), "" },
                 { os.date("%H:%M:%S"), "" },
                 { format_Time() .. os.date("%I:%M"), "" },
@@ -2740,9 +2747,9 @@ local function translator(input, seg, env)
         end
 
         -- 时辰
-        table.insert(time_variants, { GetLunarSichen(os.date("%H"), 1), "" })
+        table.insert(candidates, { GetLunarSichen(os.date("%H"), 1), "" })
 
-        generate_candidates("time", seg, time_variants)
+        generate_candidates(input, "sj", seg, candidates)
         set_prompt_if_invalid(context, time_discrpt)
         return
     end
@@ -2824,7 +2831,7 @@ local function translator(input, seg, env)
             table.insert(candidates, { target_str, comment })
         end
 
-        generate_candidates("time", seg, candidates)
+        generate_candidates(input, "utc", seg, candidates)
         return
     end
     -- **日期+时间（/dt，别名）**
@@ -2832,7 +2839,7 @@ local function translator(input, seg, env)
         context:set_property("sequence_adjustment_code", "/dt")
 
         local now = os.date("*t")
-        local dt_variants = {}
+        local candidates = {}
         local custom_dt_formats = config:get_list("datetime_formats")
 
         if custom_dt_formats and custom_dt_formats.size > 0 then
@@ -2840,18 +2847,18 @@ local function translator(input, seg, env)
                 local fmt = custom_dt_formats:get_value_at(i - 1):get_string()
                 local out = format_dt(now, fmt)
                 if out and out ~= "" then
-                    table.insert(dt_variants, { out, "" })
+                    table.insert(candidates, { out, "" })
                 end
             end
         else
-            dt_variants = {
+            candidates = {
                 { os.date("%Y-%m-%d %H:%M:%S"), "" },
                 { os.date("%Y-%m-%dT%H:%M:%S"), "" },
                 { os.date("%Y%m%d%H%M%S"),      "" },
             }
         end
 
-        generate_candidates("time", seg, dt_variants)
+        generate_candidates(input, "dt", seg, candidates)
         return
     end
 
@@ -2876,14 +2883,14 @@ local function translator(input, seg, env)
         local tz_raw   = os.date("%z") or "+0000"                -- +0800 / -0430
         local tz_colon = tz_raw:sub(1,3) .. ":" .. tz_raw:sub(4,5) -- +08:00 / -04:30
 
-        local timestamp_variants = {
+        local candidates = {
             { tostring(epoch_s),                         "〔Unix秒〕" },
             { tostring(epoch_s * 1000),                  "〔Unix毫秒〕" },
             { os.date("%Y-%m-%dT%H:%M:%S") .. tz_colon,  "〔RFC3339 本地+偏移〕" },
             { os.date("%Y%m%d%H%M%S"),                   "〔YYYYMMDDHHMMSS〕" },
         }
 
-        generate_candidates("time", seg, timestamp_variants)
+        generate_candidates(input, "tt", seg, candidates)
         return
     end
     -- **农历候选项**
@@ -2894,12 +2901,12 @@ local function translator(input, seg, env)
         local yr = os.date("%Y")
         local year = "〔" .. yr .. "年" .. "〕" -- 构造提示字符串
 
-        local lunar_variants = {
+        local candidates = {
             { Date2LunarDate(os.date("%Y%m%d")) .. JQtest(os.date("%Y%m%d")),        "" },
             { lunarJzl(os.date("%Y%m%d%H")),                                         "" },
             { Date2LunarDate(os.date("%Y%m%d")) .. GetLunarSichen(os.date("%H"), 1), "" }
         }
-        generate_candidates("date", seg, lunar_variants)
+        generate_candidates(input, "nl", seg, candidates)
         set_prompt_if_invalid(context, year) -- 显示“〔2025年〕”风格的提示
         return
     end
@@ -2912,10 +2919,10 @@ local function translator(input, seg, env)
         local _, weekno = iso_week_number(now.year, now.month, now.day)
         local num_weekday = "〔第 " .. weekno .. " 周〕"
 
-        local week_variants = {
+        local candidates = {
             { chinese_weekday2(os.date("%w")), num_weekday },
             { chinese_weekday(os.date("%w")),  num_weekday } }
-        generate_candidates("xq", seg, week_variants)
+        generate_candidates(input, "xq", seg, candidates)
         return
     end
 
@@ -2928,8 +2935,8 @@ local function translator(input, seg, env)
         local _, weekno = iso_week_number(now.year, now.month, now.day)
         local weekno_str = tostring(weekno)
 
-        local week_variants = { { "W" .. weekno_str, "" }, { "第" .. weekno_str .. "周", "" } }
-        generate_candidates("oww", seg, week_variants)
+        local candidates = { { "W" .. weekno_str, "" }, { "第" .. weekno_str .. "周", "" } }
+        generate_candidates(input, "ww", seg, candidates)
         return
     end
 
@@ -2939,7 +2946,7 @@ local function translator(input, seg, env)
         context:set_property("sequence_adjustment_code", "/jq")
         local jqs = GetNowTimeJq(os.date("%Y%m%d", os.time()))
         --local jqs = GetNowTimeJq(os.date("%Y%m%d", os.time() - 3600 * 24 * 15)) 向前获取一个历史节气
-        local jq_variants = {}
+        local candidates = {}
         for _, jq in ipairs(jqs) do
             local jieqi_name, date_str = jq:match("^(%S+)%s+(%d+-%d+-%d+)$")
             local days_diff = ""  -- 默认注释为空
@@ -2965,14 +2972,14 @@ local function translator(input, seg, env)
                     else
                         days_diff = string.format("〔< %d 天〕", diff)
                     end
-                    table.insert(jq_variants, { formatted_jq, days_diff })
+                    table.insert(candidates, { formatted_jq, days_diff })
                 end
             else
                 -- 如果解析失败，保持原样
-                table.insert(jq_variants, { jq, "" })
+                table.insert(candidates, { jq, "" })
             end
         end
-        generate_candidates("ojq", seg, jq_variants)
+        generate_candidates(input, "jq", seg, candidates)
         return
     end
 
@@ -2998,7 +3005,7 @@ local function translator(input, seg, env)
             end
         end
         -- 使用 generate_candidates 函数生成候选项
-        generate_candidates("holiday_summary", seg, candidates)
+        generate_candidates(input, "jr", seg, candidates)
         return
     end
 
@@ -3146,7 +3153,7 @@ local function translator(input, seg, env)
             string.format("◈ %s < [ %d ]天", upcoming_jqs[2], jieqi_days[2])
 
         local candidates = { { summary, "" } }
-        generate_candidates("day_summary", seg, candidates)
+        generate_candidates(input, "day", seg, candidates)
         return
     end
     -- 取消tag

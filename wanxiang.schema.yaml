@@ -125,7 +125,7 @@ super_replacer:
   delimiter: "|"
   comment_format: "〔%s〕"
   chain: true   #true表示流水线作业，上一个option产出交给下一个处理，典型的s2t>t2hk=s2hk，false就是并行，直接用text转换
-  types:
+  rules:
     # 场景1：输入 '哈哈' -> 变成 '1.哈哈 2.😄'
     - option: emoji           # 开关名称与上面开关名称保持一致
       mode: append            # 新增候选append 替换原候选replace 替换注释comment 简码模式abbrev匹配输入编码置顶词组
@@ -211,15 +211,15 @@ charset:
       - "诶濛硷氽尛躝〇冇吔咗囧屌鲶芶咲畑垅𰻝𰻞"
     blacklist: []
   - option: s2t
-    base: f
+    base: fa
     addlist: []
     blacklist: []
   - option: s2hk
-    base: h
+    base: ha
     addlist: []
     blacklist: []
   - option: s2tw
-    base: t
+    base: ta
     addlist: []
     blacklist: []
 
