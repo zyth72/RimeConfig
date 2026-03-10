@@ -462,6 +462,10 @@ function ZH.func(input, env)
 
     for cand in input:iter() do
         local genuine_cand = cand:get_genuine()
+        if genuine_cand.type == "shijian" then
+            yield(genuine_cand)
+            goto continue
+        end
         local preedit = genuine_cand.preedit or ""
         local initial_comment = genuine_cand.comment
         local final_comment = initial_comment
@@ -592,28 +596,34 @@ function ZH.func(input, env)
         apply_tone_preedit(env, genuine_cand)
         -- 进入注释处理阶段
         -- ① 辅助码注释或者声调注释
-        if is_comment_hint then
+        if initial_comment and (string.find(initial_comment, "~") or cand.type == "shijian" or cand.type == "cnen") then
+            final_comment = initial_comment
+            
+        -- 2. 常规的辅助码提示模式
+        elseif is_comment_hint then
             local fz_comment = get_fz_comment(cand, env, initial_comment)
             if fz_comment then
                 final_comment = fz_comment
             end
+            
+        -- 3. 常规的带调拼音模式
         elseif is_tone_comment then
             local fz_comment = get_fz_comment(cand, env, initial_comment)
             if fz_comment then
                 final_comment = fz_comment
             end
+            
+        -- 4. 常规的无调拼音模式
         elseif is_toneless_comment then
             local fz_comment = get_fz_comment(cand, env, initial_comment)
             if fz_comment then
                 -- 获取到带调拼音后，调用 remove_pinyin_tone 去掉声调
                 final_comment = remove_pinyin_tone(fz_comment)
             end
+            
+        -- 5. 其他情况一律清空注释
         else
-            if initial_comment and string.find(initial_comment, "~") then --保留尾部临时英文标记
-                final_comment = initial_comment
-            else
-                final_comment = ""
-            end
+            final_comment = ""
         end
 
         -- ② 拆分注释
