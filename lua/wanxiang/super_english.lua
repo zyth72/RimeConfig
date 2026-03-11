@@ -412,7 +412,7 @@ function F.func(input, env)
             
             -- [前置判断]
             if is_ascii then
-                if c_type == "user_phrase" then
+                if c_type == "user_phrase" or c_type == "user_table" then
                     -- 命中用户自定义词库(纯英文)，直接放行，既不拦截也不消耗限流名额
                 elseif safe_max_cands > 0 and eng_yield_count >= safe_max_cands then
                     skip_cand = true

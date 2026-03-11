@@ -283,6 +283,7 @@ super_replacer:
           - lua/data/TWVariants.txt
       - option: abbrev
         mode: abbrev          # <--- 新增的简码模式
+        tags: [abc]
         abbrev_rule: "2,3"
         # 前置数量2，前置位置3,数量说的是你维护得数据库编码后面分割了几个词前几个要前置显示,位置说的是你要前置到第二候选还是第几
         # 然后空码或只有英文等自定义词组的时候直接全部兜底显示,这个新的设计简化的应用层面,我们只需要维护一个数据库即可.
@@ -348,9 +349,6 @@ key_binder:
   shijian_keys: ["/", "6"]
   # Lua 配置: 超级tips上屏按键
   tips_key: "comma"   #修改时候去default找
-  # Lua 配置: 以词定字（上屏当前词句的第一个或最后一个字），和中括号翻页有冲突
-  select_first_character: "bracketleft"  # 左中括号 [
-  select_last_character: "bracketright"  # 右中括号 ]
   bindings:               # 也可以再增加方案专有的
     - { when: has_menu, accept: 1, send: apostrophe }
 
