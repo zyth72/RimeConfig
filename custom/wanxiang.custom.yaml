@@ -24,6 +24,28 @@ patch:
       abbrev: ""
       fallback: "~"
 
+  super_processor:
+    enable_backspace_limit: true # 开启/关闭退格限制
+    enable_seg_loop: true        # 开启/关闭分词符（'）循环
+    enable_tone_fallback: true   # 启用声调回退
+    kp_number_mode: auto         # 小键盘模式 (auto / compose)
+    limit_repeated: "8,40"       #格式："最大重复声母数,最大候选字数"
+    select_character: "[,]"      # 开启以词定字，自动拆解第一位上屏首字，第二位上屏尾字
+    # 下面这些写法都支持：
+    # select_character: "[,]"                      # [ 上屏首字，] 上屏尾字（推荐）
+    # select_character: "bracketleft, bracketright"  # [ 上屏首字，] 上屏尾字（英文全拼）
+
+  # 下面这个快解除注释后就能用预测，下载地址：https://cnb.cool/amzxyz/rime-wanxiang/-/releases/download/model/wanxiang-lts-zh-hans-predict.db
+  #'engine/processors/@before 0': predictor
+  #'engine/translators/@before 0': predict_translator
+  #switches/+:
+  #  - name: prediction
+  #    states: [ 预测关, 预测开 ]
+  #predictor:
+  #  db: wanxiang-lts-zh-hans-predict.db
+  #  max_candidates: 10
+  #  max_iterations: 1
+
   super_replacer:
     db_name: lua/replacer
     delimiter: "|"
@@ -83,6 +105,7 @@ patch:
           - lua/data/TWVariants.txt
       - option: abbrev      # 对应上面开关名称
         mode: abbrev
+        tags: [abc]
         prefix: "_abbr_"
         abbrev_rule: "1,6"  
         # 前置数量1，前置位置6,数量说的是你维护得数据库编码后面分割了几个词前几个要前置显示,位置说的是你要前置到第二候选还是第几
@@ -132,11 +155,7 @@ patch:
     # 可选项为：偏旁，符号，化学式，时间，符号，组字，翻译，表情，货币，车牌, 单位
     disabled_types: []
 
-  # 给 kp_number_processor 用的小键盘模式，能自动读取recognizer下面正则与之功能对齐
-  kp_number_mode: auto
-    #小键盘数字处理逻辑
-    #  "compose" : 小键盘数字始终不上屏参与编码
-    #  "auto"    : 输入中 push，空闲时 commit（默认）
+
 
   #shijian:仅仅作为提示使用，编码已经写死，引导键可以在key_binder下修改前缀
   #时间：osj 或者 /sj

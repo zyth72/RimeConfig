@@ -33,9 +33,7 @@ local SYMBOL_DEFAULT = {
     z="。", x="？", c="！", v="——", b="%", n="《", m="》"
 }
 
--- [LimitRepeated] 重复限制配置
-local MAX_REPEAT = 8
-local MAX_SEGMENTS = 40
+-- [LimitRepeated] 重复限制默认配置 (现已支持配置覆盖)
 local INITIALS = "[bpmfdtnlgkhjqxrzcsywiu]"
 
 -- [SuperSegmentation] 分词模式配置
@@ -176,6 +174,79 @@ function M.init(env)
     local context = engine.context
 
     -- [1] 配置加载 (按功能模块分类)
+    
+    env.enable_backspace_limit = true
+    env.enable_seg_loop = true
+    env.enable_tone_fallback = true
+    env.enable_limit_repeated = true
+    env.max_repeat = 8
+    env.max_segments = 40
+    env.sc_first_key = nil
+    env.sc_last_key = nil
+
+    if config then
+        -- 基础开关加载
+        local ok_bs, bs_val = pcall(function() return config:get_bool("super_processor/enable_backspace_limit") end)
+        if ok_bs and bs_val ~= nil then env.enable_backspace_limit = bs_val end
+        
+        local ok_seg, seg_val = pcall(function() return config:get_bool("super_processor/enable_seg_loop") end)
+        if ok_seg and seg_val ~= nil then env.enable_seg_loop = seg_val end
+
+        local ok_tf, tf_val = pcall(function() return config:get_bool("super_processor/enable_tone_fallback") end)
+        if ok_tf and tf_val ~= nil then env.enable_tone_fallback = tf_val end
+
+        -- 长度限制配置加载（支持 false, "", "8,40"）
+        local ok_lr_bool, lr_bool = pcall(function() return config:get_bool("super_processor/limit_repeated") end)
+        local ok_lr_str, lr_str = pcall(function() return config:get_string("super_processor/limit_repeated") end)
+
+        if ok_lr_bool and lr_bool == false then
+            env.enable_limit_repeated = false
+        elseif ok_lr_str and type(lr_str) == "string" then
+            local str_trim = lr_str:match("^%s*(.-)%s*$")
+            if str_trim == "" or str_trim:lower() == "false" then
+                env.enable_limit_repeated = false
+            else
+                local p1, p2 = str_trim:match("^(%d+)%s*,%s*(%d+)$")
+                if p1 and p2 then
+                    env.max_repeat = tonumber(p1)
+                    env.max_segments = tonumber(p2)
+                end
+            end
+        end
+
+        -- 以词定字配置加载（支持 false, "", "[,]", "bracketleft, bracketright"）
+        local has_new_config = false
+        local ok_sc_bool, sc_bool = pcall(function() return config:get_bool("super_processor/select_character") end)
+        local ok_sc_str, sc_str = pcall(function() return config:get_string("super_processor/select_character") end)
+
+        if ok_sc_bool and sc_bool == false then
+            env.sc_first_key, env.sc_last_key = nil, nil
+            has_new_config = true
+        elseif ok_sc_str and type(sc_str) == "string" then
+            local str_trim = sc_str:match("^%s*(.-)%s*$")
+            if str_trim == "" or str_trim:lower() == "false" then
+                env.sc_first_key, env.sc_last_key = nil, nil
+            else
+                -- 尝试使用逗号分割
+                local p1, p2 = str_trim:match("^(.-),(.-)$")
+                if p1 and p2 then
+                    env.sc_first_key = p1:match("^%s*(.-)%s*$")
+                    env.sc_last_key  = p2:match("^%s*(.-)%s*$")
+                elseif #str_trim >= 2 then
+                    -- 兜底兼容旧的 "[]" 无逗号写法
+                    env.sc_first_key = str_trim:sub(1,1)
+                    env.sc_last_key  = str_trim:sub(2,2)
+                end
+            end
+            has_new_config = true
+        end
+
+        if not has_new_config then
+            -- 兜底：只有在新配置完全缺失时，才去读旧配置
+            env.sc_first_key = config:get_string('key_binder/select_first_character')
+            env.sc_last_key = config:get_string('key_binder/select_last_character')
+        end
+    end
 
     -- [BackspaceLimit]
     env.bs_prev_len = -1
@@ -183,7 +254,7 @@ function M.init(env)
 
     -- [KpNumber] 小键盘
     env.kp_page_size = config:get_int("menu/page_size") or 6
-    local m = config:get_string("kp_number_mode") or "auto"
+    local m = config:get_string("super_processor/kp_number_mode") or "auto"
     env.kp_mode = (m == "auto" or m == "compose") and m or "auto"
     env.kp_func_patterns = wanxiang.load_regex_patterns(config, "recognizer/patterns")
 
@@ -214,10 +285,6 @@ function M.init(env)
     end
     env.qs_last_commit = "欢迎使用万象拼音！"
 
-    -- [SelectCharacter] 以词定字
-    env.sc_first_key = config:get_string('key_binder/select_first_character')
-    env.sc_last_key = config:get_string('key_binder/select_last_character')
-
     -- [SuperSegmentation] 超强分词
     local delim = config:get_string("speller/delimiter") or " '"
     env.seg_auto_delim = delim:sub(1,1)
@@ -230,22 +297,28 @@ function M.init(env)
     -- [2] 统一 Update Notifier (状态缓存与自动处理)
 
     env.conn_update = context.update_notifier:connect(function(ctx)
-        -- A. [ToneFallback] 执行声调压缩
-        local t_state = env.tone_state or "idle"
-        env.tone_state = "idle" 
-        
+        -- 核心修复：必须把 input 的获取提炼到最外层，否则下方逻辑会拿到 nil
         local input = ctx.input or ""
-        if t_state == "compress" and input ~= "" then
-            local caret = (ctx.caret_pos ~= nil) and ctx.caret_pos or #input
-            if caret < 0 then caret = 0 end
-            if caret > #input then caret = #input end
-
-            local left  = (caret > 0) and input:sub(1, caret) or ""
-            local left_new, changed = compress_runs_keep_last(left)
+        
+        -- A. [ToneFallback] 执行声调压缩
+        if env.enable_tone_fallback then
+            local t_state = env.tone_state or "idle"
+            env.tone_state = "idle" 
             
-            if changed then
-                if caret > 0 then ctx:pop_input(caret) end
-                if #left_new > 0 then ctx:push_input(left_new) end
+            if t_state == "compress" and input ~= "" then
+                local caret = (ctx.caret_pos ~= nil) and ctx.caret_pos or #input
+                if caret < 0 then caret = 0 end
+                if caret > #input then caret = #input end
+
+                local left  = (caret > 0) and input:sub(1, caret) or ""
+                local left_new, changed = compress_runs_keep_last(left)
+                
+                if changed then
+                    if caret > 0 then ctx:pop_input(caret) end
+                    if #left_new > 0 then ctx:push_input(left_new) end
+                    -- push_input 会自动触发下一次 update_notifier，所以这里可以更新本地 input
+                    input = ctx.input or ""
+                end
             end
         end
 
@@ -317,6 +390,8 @@ end
 
 -- [SuperSegmentation] 处理分词符 '
 local function handle_segmentation(key, env, ctx)
+    if not env.enable_seg_loop then return false end
+
     if key.keycode ~= string.byte(env.seg_manual_delim) then
         env.seg_core, env.seg_start_idx, env.seg_N, env.seg_base = nil, nil, nil, nil
         return false 
@@ -410,6 +485,8 @@ end
 
 -- [Backspace Limit] 退格限制
 local function handle_backspace(key, env, ctx)
+    if not env.enable_backspace_limit then return false end
+
     local kc = key.keycode
     if kc ~= 0xFF08 or key:release() then
         env.bs_sequence = false
@@ -434,6 +511,8 @@ end
 
 -- [Limit Repeated] 重复输入限制
 local function handle_limit_repeat(key, env, ctx)
+    if not env.enable_limit_repeated then return false end
+
     local kc = key.keycode
     if not (kc >= 0x61 and kc <= 0x7A) then return false end
     
@@ -447,12 +526,12 @@ local function handle_limit_repeat(key, env, ctx)
     local nxt = input .. ch
     local last, rep_n = tail_rep(nxt)
     
-    if last:match(INITIALS) and rep_n > MAX_REPEAT then
+    if last:match(INITIALS) and rep_n > env.max_repeat then
         prompt(ctx, " 〔已超最大重复声母〕")
         return true
     end
     
-    if segs >= MAX_SEGMENTS then
+    if segs >= env.max_segments then
         prompt(ctx, " 〔已超最大输入长度〕")
         return true
     end
@@ -485,10 +564,15 @@ local function handle_select_character(key, env, ctx)
     -- 2. 状态检查：必须在输入中或有候选菜单
     if not (ctx:is_composing() or ctx:has_menu()) then return false end
 
-    -- 3. 键值匹配
+    -- 3. 键值与字符双重匹配（解决 Rime 返回 "bracketleft" 无法匹配 "[" 的问题）
     local repr = key:repr()
-    local is_first = (repr == env.sc_first_key)
-    local is_last = (repr == env.sc_last_key)
+    local ch = ""
+    if key.keycode >= 0x20 and key.keycode <= 0x7E then
+        ch = string.char(key.keycode)
+    end
+
+    local is_first = (env.sc_first_key and (repr == env.sc_first_key or ch == env.sc_first_key))
+    local is_last  = (env.sc_last_key and (repr == env.sc_last_key or ch == env.sc_last_key))
     if not (is_first or is_last) then return false end
 
     -- 4. 获取当前选中的候选词或输入
@@ -524,7 +608,9 @@ local function handle_number_logic(key, env, ctx)
         if key:ctrl() or key:alt() or key:super() or key:shift() then return false end
         
         -- ToneFallback: 小键盘必须跳过压缩
-        env.tone_state = "skip"
+        if env.enable_tone_fallback then
+            env.tone_state = "skip"
+        end
 
         local ch = tostring(kp_num)
         
@@ -552,29 +638,31 @@ local function handle_number_logic(key, env, ctx)
         if key:ctrl() or key:alt() or key:super() then return false end
         
         -- ToneFallback: 标记回退意图
-        local is_func_mode = false
-        if wanxiang.is_function_mode_active then
-            is_func_mode = wanxiang.is_function_mode_active(ctx)
-        end
-        local is_first_cand_has_eng = false
-        local cand = ctx:get_selected_candidate()
-        if cand then
-            if cand.text:match("[a-zA-Z]") then
-                is_first_cand_has_eng = true
+        if env.enable_tone_fallback then
+            local is_func_mode = false
+            if wanxiang.is_function_mode_active then
+                is_func_mode = wanxiang.is_function_mode_active(ctx)
             end
-        end
+            local is_first_cand_has_eng = false
+            local cand = ctx:get_selected_candidate()
+            if cand then
+                if cand.text:match("[a-zA-Z]") then
+                    is_first_cand_has_eng = true
+                end
+            end
 
-        -- 如果是反查模式 OR 功能模式，状态设为 idle (不回退)
-        if input:find(env.lookup_key, 1, true) or is_func_mode or is_first_cand_has_eng then
-            env.tone_state = "idle"
-            -- 这里不 return，因为数字键可能还有“正则拦截”或“候选选词”的任务
-        else
-            env.tone_state = "compress"
-            local caret = (ctx.caret_pos ~= nil) and ctx.caret_pos or #input
-            if caret > #input then caret = #input end
-            local left = (caret > 0) and input:sub(1, caret) or ""
-            local _, changed = compress_runs_keep_last(left)
-            if changed then return true end
+            -- 如果是反查模式 OR 功能模式，状态设为 idle (不回退)
+            if input:find(env.lookup_key, 1, true) or is_func_mode or is_first_cand_has_eng then
+                env.tone_state = "idle"
+                -- 这里不 return，因为数字键可能还有“正则拦截”或“候选选词”的任务
+            else
+                env.tone_state = "compress"
+                local caret = (ctx.caret_pos ~= nil) and ctx.caret_pos or #input
+                if caret > #input then caret = #input end
+                local left = (caret > 0) and input:sub(1, caret) or ""
+                local _, changed = compress_runs_keep_last(left)
+                if changed then return true end
+            end
         end
 
         -- 正则拦截
@@ -605,7 +693,9 @@ local function handle_number_logic(key, env, ctx)
             return false 
         end
     else
-        env.tone_state = "idle"
+        if env.enable_tone_fallback then
+            env.tone_state = "idle"
+        end
     end
     return false
 end
@@ -668,7 +758,9 @@ function M.func(key, env)
         if handle_number_logic(key, env, ctx) then return K_ACCEPT end
     else
         -- 非数字键，重置声调状态
-        env.tone_state = "idle"
+        if env.enable_tone_fallback then
+            env.tone_state = "idle"
+        end
     end
 
     return K_NOOP

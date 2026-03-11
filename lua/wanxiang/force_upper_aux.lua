@@ -70,16 +70,19 @@ function ForceUpperAux.init(env)
     local dict_name = config:get_string("translator/dictionary") or "wanxiang_pro"
     env.dict = ReverseLookup(dict_name)
     
-    env.history_first = {}   -- 记录每个长度最初出现的首选
+    env.history_first = {}   
     env.press_count = 0      
     env.is_cycling = false   
     env.snapshot_parts = nil 
     env.snapshot_current_full = ""
     
     env.on_update = function(ctx)
-        -- 调用外部模块函数，如果在功能模式则不记录历史
-        -- 这里 env.is_cycling 起到了锁的作用，防止在按快捷键修改输入时陷入循环
-        if env.is_cycling or wanxiang.is_function_mode_active(ctx) then return end
+
+        local is_special_mode = wanxiang.s2t_conversion and wanxiang.s2t_conversion(ctx)
+        if env.is_cycling or wanxiang.is_function_mode_active(ctx) or is_special_mode then 
+            return 
+        end
+        
         if not ctx:is_composing() then
             env.history_first = {}
             env.press_count = 0
@@ -123,13 +126,15 @@ function ForceUpperAux.func(key_event, env)
     if key_event:release() then return 2 end
     local ctx = env.engine.context
     
-    -- 功能模式检查
-    if wanxiang.is_function_mode_active(ctx) then return 2 end
+    -- 功能模式检查 + 特殊标签检查（数字、标点等）
+    local is_special_mode = wanxiang.s2t_conversion and wanxiang.s2t_conversion(ctx)
+    if wanxiang.is_function_mode_active(ctx) or is_special_mode then 
+        return 2 
+    end
 
     local current_key = key_event:repr()
     if current_key == env.trigger_key then
         if not ctx:is_composing() then return 2 end
-        
         -- 首次按下捕捉快照
         if env.press_count == 0 then
             env.snapshot_parts = get_script_text_parts(ctx)
@@ -148,7 +153,6 @@ function ForceUpperAux.func(key_event, env)
         end
         
         env.press_count = env.press_count + 1
-        -- 开启循环锁，这样下面修改 ctx.input 触发的 on_update 会被直接拦截
         env.is_cycling = true 
         
         local parts_count = #parts
@@ -156,19 +160,18 @@ function ForceUpperAux.func(key_event, env)
         local apply_until = 0
         
         if env.press_count % 2 == 1 then
-            -- 按一次：全长度 N
             candidate_text = env.snapshot_current_full
             apply_until = parts_count 
         else
-            -- 按两次：回退 N-1
             local n_minus_1 = math.max(1, parts_count - 1)
             candidate_text = env.history_first[n_minus_1] or get_utf8_prefix(env.snapshot_current_full, n_minus_1)
             apply_until = n_minus_1 
         end
         
-        -- 性能优化：使用表来收集字符串分片，最后使用 table.concat 一次性拼接
         local new_input_parts = {}
         local text_len = utf8.len(candidate_text) or 0
+        local found_any_aux = false 
+        
         for i = 1, parts_count do
             local syl = parts[i]
             if i <= apply_until and i <= text_len then
@@ -177,21 +180,31 @@ function ForceUpperAux.func(key_event, env)
                 
                 local char = get_utf8_char(candidate_text, i)
                 local aux = lookup_aux_code(env, char)
-                new_input_parts[i] = pinyin .. aux
+                if aux and aux ~= "" then
+                    new_input_parts[i] = pinyin .. aux
+                    found_any_aux = true
+                else
+                    new_input_parts[i] = syl
+                end
             else
                 new_input_parts[i] = syl
             end
         end
+        if not found_any_aux then
+            env.press_count = 0
+            env.is_cycling = false
+            env.snapshot_parts = nil
+            return 2
+        end
+        
         local new_input = table.concat(new_input_parts)
         
         if new_input ~= "" and new_input ~= ctx.input then
-            -- 此时修改 input 会触发 on_update，但会被 env.is_cycling == true 完美拦截
             ctx.input = new_input
         end
         
         return 1 
     else
-        -- 任意其他键按下，重置状态机
         env.press_count = 0
         env.is_cycling = false
         env.snapshot_parts = nil
