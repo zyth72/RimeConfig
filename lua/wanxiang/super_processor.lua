@@ -179,11 +179,19 @@ function M.init(env)
     env.enable_seg_loop = true
     env.enable_tone_fallback = true
     env.enable_limit_repeated = true
+    env.enable_predict_space = true
+    env.pending_predict_space = false
     env.max_repeat = 8
     env.max_segments = 40
     env.sc_first_key = nil
     env.sc_last_key = nil
-
+    env.is_t9 = false
+    if wanxiang.get_input_method_type then
+        local im_type = wanxiang.get_input_method_type(env)
+        if im_type == "t9" then
+            env.is_t9 = true
+        end
+    end
     if config then
         -- 基础开关加载
         local ok_bs, bs_val = pcall(function() return config:get_bool("super_processor/enable_backspace_limit") end)
@@ -195,6 +203,8 @@ function M.init(env)
         local ok_tf, tf_val = pcall(function() return config:get_bool("super_processor/enable_tone_fallback") end)
         if ok_tf and tf_val ~= nil then env.enable_tone_fallback = tf_val end
 
+        local ok_ps, ps_val = pcall(function() return config:get_bool("super_processor/enable_predict_space") end)
+        if ok_ps and ps_val ~= nil then env.enable_predict_space = ps_val end
         -- 长度限制配置加载（支持 false, "", "8,40"）
         local ok_lr_bool, lr_bool = pcall(function() return config:get_bool("super_processor/limit_repeated") end)
         local ok_lr_str, lr_str = pcall(function() return config:get_string("super_processor/limit_repeated") end)
@@ -297,9 +307,13 @@ function M.init(env)
     -- [2] 统一 Update Notifier (状态缓存与自动处理)
 
     env.conn_update = context.update_notifier:connect(function(ctx)
-        -- 核心修复：必须把 input 的获取提炼到最外层，否则下方逻辑会拿到 nil
         local input = ctx.input or ""
-        
+        if env.pending_predict_space then
+            env.pending_predict_space = false
+            ctx:set_option("_dummy_predict_update", false)
+            ctx:clear()
+            env.engine:commit_text(" ")
+        end
         -- A. [ToneFallback] 执行声调压缩
         if env.enable_tone_fallback then
             local t_state = env.tone_state or "idle"
@@ -388,6 +402,16 @@ local function handle_quick_symbol_intercept(key, env, ctx)
     return false
 end
 
+-- [Predict Space] 联想空格接力起跑点
+local function handle_predict_space(key, env, ctx)
+    if not env.enable_predict_space then return false end
+    if (not ctx:is_composing() or ctx.input == "") and ctx:has_menu() then
+        env.pending_predict_space = true
+        ctx:set_option("_dummy_predict_update", true)
+        return true 
+    end
+    return false
+end
 -- [SuperSegmentation] 处理分词符 '
 local function handle_segmentation(key, env, ctx)
     if not env.enable_seg_loop then return false end
@@ -601,43 +625,55 @@ end
 local function handle_number_logic(key, env, ctx)
     local kc = key.keycode
     local input = ctx.input or ""
+    local r = key:repr() or ""
 
-    -- A. 小键盘处理 (KpNumber)
     local kp_num = KP_MAP[kc]
-    if kp_num ~= nil then
+
+    -- A. 桌面端专属：小键盘不上屏处理 (移动端直接跳过此区)
+    if kp_num ~= nil and not wanxiang.is_mobile_device() then
         if key:ctrl() or key:alt() or key:super() or key:shift() then return false end
         
-        -- ToneFallback: 小键盘必须跳过压缩
         if env.enable_tone_fallback then
             env.tone_state = "skip"
         end
 
         local ch = tostring(kp_num)
         
-        -- 1. 正则拦截
         if is_function_code_after_digit(env, ctx, ch) then
             if ctx.push_input then ctx:push_input(ch) else ctx.input = input .. ch end
             return true
         end
-        -- 2. 模式处理
         if env.kp_mode == "auto" then
             if env.kp_is_composing then
                 if ctx.push_input then ctx:push_input(ch) else ctx.input = input .. ch end
             else
-                return false -- Noop
+                return false
             end
-        else -- compose mode
+        else 
             if ctx.push_input then ctx:push_input(ch) else ctx.input = input .. ch end
         end
         return true
     end
 
-    -- B. 主键盘数字
-    local r = key:repr() or ""
+    -- B. 统一数字处理：提取主键盘的数字，或者移动端的小键盘数字
+    local digit_str = nil
     if r:match("^[0-9]$") then
+        digit_str = r
+    elseif kp_num ~= nil and wanxiang.is_mobile_device() then
+        digit_str = tostring(kp_num) -- 移动端小键盘视为标准数字
+    end
+
+    if digit_str then
         if key:ctrl() or key:alt() or key:super() then return false end
         
-        -- ToneFallback: 标记回退意图
+        -- 只要是 T9 九键方案，数字键就是打字编码键，放行给底层
+        if env.is_t9 then
+            if env.enable_tone_fallback then
+                env.tone_state = "idle"
+            end
+            return false
+        end
+
         if env.enable_tone_fallback then
             local is_func_mode = false
             if wanxiang.is_function_mode_active then
@@ -651,10 +687,8 @@ local function handle_number_logic(key, env, ctx)
                 end
             end
 
-            -- 如果是反查模式 OR 功能模式，状态设为 idle (不回退)
             if input:find(env.lookup_key, 1, true) or is_func_mode or is_first_cand_has_eng then
                 env.tone_state = "idle"
-                -- 这里不 return，因为数字键可能还有“正则拦截”或“候选选词”的任务
             else
                 env.tone_state = "compress"
                 local caret = (ctx.caret_pos ~= nil) and ctx.caret_pos or #input
@@ -665,15 +699,14 @@ local function handle_number_logic(key, env, ctx)
             end
         end
 
-        -- 正则拦截
-        if is_function_code_after_digit(env, ctx, r) then
-            if ctx.push_input then ctx:push_input(r) else ctx.input = input .. r end
+        if is_function_code_after_digit(env, ctx, digit_str) then
+            if ctx.push_input then ctx:push_input(digit_str) else ctx.input = input .. digit_str end
             return true
         end
 
-        -- 候选选词
+        -- 选词逻辑 (桌面端主键盘数字 / 移动端所有数字)
         if env.kp_has_menu then
-            local d = tonumber(r)
+            local d = tonumber(digit_str)
             if d == 0 then d = 10 end
             if d and d >= 1 and d <= env.kp_page_size then
                 local comp = ctx.composition
@@ -685,6 +718,7 @@ local function handle_number_logic(key, env, ctx)
                         local page_start = math.floor(sel_index / env.kp_page_size) * env.kp_page_size
                         local index = page_start + (d - 1)
                         if index < menu:candidate_count() then
+                            -- 这里执行纯净的 ctx:select，不干涉物理按键事件
                             if ctx:select(index) then return true end
                         end
                     end
@@ -693,13 +727,14 @@ local function handle_number_logic(key, env, ctx)
             return false 
         end
     else
+        -- 非数字键重置状态，保证声调压缩不越界
         if env.enable_tone_fallback then
             env.tone_state = "idle"
         end
     end
+    
     return false
 end
-
 -- 5. 主入口函数 (Main Logic Flow)
 function M.func(key, env)
     local ctx = env.engine.context
@@ -711,6 +746,11 @@ function M.func(key, env)
     end
 
     local kc = key.keycode
+
+    -- [Predict Space] 联想空格
+    if kc == 0x20 then
+        if handle_predict_space(key, env, ctx) then return K_ACCEPT end
+    end
 
     if ctx.composition:empty() then
         if kc == 0xff0d or kc == 0xff8d or kc == 0x20 then

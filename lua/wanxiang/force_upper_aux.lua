@@ -1,5 +1,5 @@
 -- lua/force_upper_aux.lua
--- @description: 自动施加辅助码。按一下：全长度N锁定当前；按两下：N-1长度回退历史。
+-- @description: 自动施加辅助码。按一下：全长度N锁定当前；按两下：N-1长度回退历史。按下退格键解除锁定
 -- @author: amzxyz
 
 local ForceUpperAux = {}
@@ -75,8 +75,13 @@ function ForceUpperAux.init(env)
     env.is_cycling = false   
     env.snapshot_parts = nil 
     env.snapshot_current_full = ""
+    env.original_input = ""
     
     env.on_update = function(ctx)
+        local raw_in = ctx.input or ""
+        if raw_in == "" or not raw_in:match("^[a-zA-Z0-9]") then
+            return
+        end
 
         local is_special_mode = wanxiang.s2t_conversion and wanxiang.s2t_conversion(ctx)
         if env.is_cycling or wanxiang.is_function_mode_active(ctx) or is_special_mode then 
@@ -110,7 +115,6 @@ function ForceUpperAux.init(env)
 end
 
 function ForceUpperAux.fini(env)
-    -- 在 fini 周期内统一断开连接器，并释放大对象引用，避免内存泄漏
     if env.update_conn then 
         env.update_conn:disconnect()
         env.update_conn = nil
@@ -125,18 +129,24 @@ end
 function ForceUpperAux.func(key_event, env)
     if key_event:release() then return 2 end
     local ctx = env.engine.context
+    local raw_in = ctx.input or ""
+    if raw_in == "" or not raw_in:match("^[a-zA-Z0-9]") then
+        return 2
+    end
     
-    -- 功能模式检查 + 特殊标签检查（数字、标点等）
     local is_special_mode = wanxiang.s2t_conversion and wanxiang.s2t_conversion(ctx)
     if wanxiang.is_function_mode_active(ctx) or is_special_mode then 
         return 2 
     end
 
     local current_key = key_event:repr()
+    
+    -- 主逻辑判断开始
     if current_key == env.trigger_key then
         if not ctx:is_composing() then return 2 end
-        -- 首次按下捕捉快照
+        
         if env.press_count == 0 then
+            env.original_input = ctx.input -- 记住最原始的输入
             env.snapshot_parts = get_script_text_parts(ctx)
             local comp = ctx.composition
             if not comp:empty() then
@@ -204,10 +214,29 @@ function ForceUpperAux.func(key_event, env)
         end
         
         return 1 
-    else
+        
+    -- 拦截 BackSpace 键
+    elseif current_key == "BackSpace" and env.is_cycling then
+        -- 如果有原始输入记录，就恢复它
+        if env.original_input and env.original_input ~= "" then
+            ctx.input = env.original_input
+        end
+        
+        -- 彻底重置所有锁定状态
         env.press_count = 0
         env.is_cycling = false
         env.snapshot_parts = nil
+        env.original_input = ""
+        
+        -- 返回 1 吞掉这次退格事件默认的删字逻辑
+        return 1
+        
+    else
+        -- 遇到其他按键（打字、空格等），重置状态并放行
+        env.press_count = 0
+        env.is_cycling = false
+        env.snapshot_parts = nil
+        env.original_input = ""
         return 2 
     end
 end
