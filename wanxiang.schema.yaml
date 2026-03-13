@@ -101,9 +101,9 @@ engine:
 grammar:
   language: wanxiang-lts-zh-hans
   collocation_max_length: 7
-  collocation_min_length: 2
+  collocation_min_length: 3
   collocation_penalty: -10
-  non_collocation_penalty: -20
+  non_collocation_penalty: 3
   weak_collocation_penalty: -35
   rear_penalty: -12
 
@@ -566,7 +566,7 @@ recognizer:
 #              '`'（反引号）没有改成 '·'（间隔号）。
 #   symbols    Rime 的预设配置是以 '/' 前缀开头输出一系列字符，自定义的修改 symbols.yaml
 punctuator:
-  digit_separators: ",."  #数字分隔符，系统逻辑是在中文状态下输入数字后继续输入句号按下两次即输入半角状态
+  digit_separators: ",.:"  #数字分隔符，系统逻辑是在中文状态下输入数字后继续输入句号按下两次即输入半角状态
   __include: wanxiang_symbols:/symbol_table         # 从 wanxiang_symbols.yaml 导入所有符号配置
 
 # 从 default 继承快捷键
