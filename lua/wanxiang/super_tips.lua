@@ -180,6 +180,10 @@ local function update_tips_prompt(context, env)
     
     if not context:get_option("super_tips") then return end
 
+    if not context.input or context.input == "" then  --预测数据时有候选无编码，但体验不好
+        return 
+    end
+
     local segment = context.composition:back()
     if not segment then return end
 
