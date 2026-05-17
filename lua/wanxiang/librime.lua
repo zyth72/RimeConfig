@@ -1,6 +1,7 @@
 -- librime-lua 官方类型提示
 -- ⚠️ 仅用于类型提升，请勿直接 require 使用
 -- from https://github.com/hchunhui/librime-lua/blob/master/contrib/librime.lua
+-- Copyright (c) 2021, librime-lua Developers
 -- Last Change: LTS
 ---@meta rime
 

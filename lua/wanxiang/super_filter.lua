@@ -1,4 +1,4 @@
--- @amzxyz  https://github.com/amzxyz/rime_wanxiang
+-- @amzxyz  https://github.com/amzxyz/rime-wanxiang
 -- 提供以下核心修饰与兜底能力：
 -- 功能 A：转义序列解析（常驻）
 --         将候选词中的 \n, \t, \s(空格) 等文本转义符格式化为实际效果。
@@ -230,27 +230,48 @@ local function apply_escape_fast(text)
     return s, s ~= text
 end
 
-local function format_and_autocap(cand)
+local function format_and_autocap(cand, env)
     local text = cand.text
     if not text or text == "" then 
         return cand 
     end
     
-    local t2, changed = apply_escape_fast(text)
-    if not changed then 
-        return cand 
+    -- 1. 处理转义字符
+    local t2, text_changed = apply_escape_fast(text)
+    
+    -- 2. 处理尾巴符号追加
+    local genuine = cand:get_genuine()
+    local current_comment = genuine.comment or ""
+    local symbol = env.cand_type_symbols[fast_type(cand)]
+    local comment_changed = false
+    
+    if symbol and symbol ~= "" and current_comment ~= "~" then
+        -- 防重判断，避免因为各种原因重复追加
+        local escaped_symbol = symbol:gsub("[%-%^%$%(%)%%%.%[%]%*%+%?]", "%%%1")
+        if not current_comment:match(escaped_symbol .. "$") then
+            current_comment = current_comment .. symbol
+            comment_changed = true
+        end
     end
     
-    local nc = Candidate(cand.type, cand.start, cand._end, t2, cand.comment)
-    nc.preedit = cand.preedit
-    
-    return nc
+    -- 分流处理！保住 spans 物理边界
+    if text_changed then
+        local nc = Candidate(cand.type, cand.start, cand._end, t2, current_comment)
+        nc.preedit = cand.preedit
+        return nc
+    elseif comment_changed then
+        genuine.comment = current_comment
+        return cand
+    else
+        -- 如果文本和注释都没变，直接放行原候选词，节省性能
+        return cand 
+    end
 end
 
 local function clone_candidate(c)
     local nc = Candidate(c.type, c.start, c._end, c.text, c.comment or "")
     nc.preedit = c.preedit
-    
+    nc.quality = c.quality
     return nc
 end
 --  包裹映射
@@ -459,6 +480,17 @@ function M.init(env)
     -- 状态初始化
     env.page_cache = {}
     env.last_2code_char = nil 
+    -- 读取全局类型符号配置
+    env.cand_type_symbols = {}
+    local map = cfg and cfg:get_map("super_comment/cand_type")
+    if map then
+        for _, key in ipairs(map:keys()) do
+            local val = cfg:get_string("super_comment/cand_type/" .. key)
+            if val and val ~= "" then
+                env.cand_type_symbols[key] = val
+            end
+        end
+    end
 end
 
 function M.fini(env)
@@ -488,7 +520,7 @@ function M.func(input, env)
     local enable_taichi = env.enable_taichi_filter
 
     -- 及时清理兜数据
-    if seg_len < 2 or seg_len > 3 then
+    if seg_len < 2 then
         env.last_2code_char = nil
     end
 
@@ -627,7 +659,7 @@ function M.func(input, env)
         if not should_skip then
             suppress_set[text] = true
             
-            local formatted_cand = format_and_autocap(cand)
+            local formatted_cand = format_and_autocap(cand, env)
             if not code_has_symbol and #env.page_cache < wrap_limit then
                 table.insert(env.page_cache, clone_candidate(formatted_cand))
             end
@@ -662,7 +694,7 @@ function M.func(input, env)
 
         if not should_skip then
             suppress_set[text] = true
-            yield(format_and_autocap(cand))
+            yield(format_and_autocap(cand, env))
         end
     end
     -- PHASE 3: 三码空候选兜底
@@ -674,9 +706,10 @@ function M.func(input, env)
             if start_pos < 0 then 
                 start_pos = 0 
             end
-            
             local end_pos = last_seg and last_seg._end or #code
-            local nc = Candidate("fallback", start_pos, end_pos, fallback_text, "")
+            local c_type = "fallback"
+            local symbol = env.cand_type_symbols[c_type] or ""
+            local nc = Candidate(c_type, start_pos, end_pos, fallback_text, symbol)
             
             local seg_str = sub(code, start_pos + 1, end_pos)
             if #seg_str >= 3 then
@@ -694,5 +727,4 @@ function M.func(input, env)
         end
     end
 end
-
 return M

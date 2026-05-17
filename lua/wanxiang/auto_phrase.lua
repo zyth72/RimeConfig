@@ -1,4 +1,4 @@
--- @amzxyz https://github.com/amzxyz/rime_wanxiang
+-- @amzxyz https://github.com/amzxyz/rime-wanxiang
 -- 自动造词
 local AP = {}
 
@@ -148,16 +148,15 @@ function AP.commit_handler(ctx, env)
     if raw_input ~= "" and raw_input:sub(-1) == "\\" and is_ascii_word(commit_text) then
         local code_body = raw_input:gsub("\\+$", "")
         code_body = code_body:gsub("%s+$", "")
-
-        if code_body ~= "" and env.en_memory then
+        local clean_commit_text = commit_text:gsub("\\+$", "")
+        if code_body ~= "" and clean_commit_text ~= "" and env.en_memory then
             local function save_entry(code)
                 local entry = DictEntry()
-                entry.text        = commit_text
+                entry.text        = clean_commit_text
                 entry.weight      = 1
                 entry.custom_code = code .. " "
                 env.en_memory:update_userdict(entry, 1, "")
             end
-
             save_entry(code_body)
             local lower_code = string.lower(code_body)
             if lower_code ~= code_body then

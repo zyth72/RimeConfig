@@ -1,5 +1,5 @@
 -- lua/super_english.lua
--- https://github.com/amzxyz/rime_wanxiang
+-- https://github.com/amzxyz/rime-wanxiang
 -- @description: 英文全能处理器 (Filter Only: 锚点切分 + 动态分隔符 + 超时销毁 + 性能极速优化)
 -- @author: amzxyz
 
@@ -163,6 +163,7 @@ local function apply_segment_formatting(text, input_code)
     local parts = {}
     local p_code = 1 
     for word in string.gmatch(text, "%S+") do
+        local out_word = word
         local clean_word = pure(word)
         local w_len = #clean_word
         if w_len > 0 then
@@ -179,15 +180,15 @@ local function apply_segment_formatting(text, input_code)
                     local segment = sub(input_code, p_code, p_code + check_len - 1)
                     local is_pure_alpha = not find(word, "[^a-zA-Z]")
                     if find(segment, "^%u%u") and is_pure_alpha then
-                        word = upper(word)
+                        out_word = upper(word)
                     elseif find(segment, "^%u") then
-                        word = gsub(word, "^%a", upper)
+                        out_word = gsub(word, "^%a", upper)
                     end
                     p_code = p_code + check_len
                 end
             end
         end
-        table.insert(parts, word)
+        table.insert(parts, out_word)
     end
     return table.concat(parts, " ")
 end
@@ -298,7 +299,7 @@ function F.init(env)
             else
                 env.last_commit_time = 0
             end
-            ctx:set_property("english_spacing", "")
+            _G.english_spacing_break = false
             env.block_derivation = false
         end)
     end
@@ -313,10 +314,10 @@ end
 function F.func(input, env)
     local ctx = env.engine.context
 
-    if ctx:get_property("force_sticky_code") == "true" then
+    if _G.force_sticky_code == true then
         env.sticky_countdown = STICKY_BUFFER_SIZE
         env.prev_commit_is_eng = false
-        ctx:set_property("force_sticky_code", "")
+        _G.force_sticky_code = false 
     end
 
     local curr_input = ctx.input
@@ -346,7 +347,7 @@ function F.func(input, env)
         end
     end
     
-    local break_signal = (ctx:get_property("english_spacing") == "true")
+    local break_signal = (_G.english_spacing_break == true)
     local effective_prev_is_eng = env.prev_commit_is_eng
 
     if break_signal then 
