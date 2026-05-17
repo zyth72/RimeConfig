@@ -17,7 +17,7 @@ jobs:
 
       - name: 克隆仓库
         run: |
-          git clone https://${{ secrets.PRIVATE_REPO_PAT }}@github.com/zyth3519/RimeConfig.git
+          git clone https://${{ secrets.PRIVATE_REPO_PAT }}@github.com/zyth72/RimeConfig.git
 
       - name: 下载 Release 信息
         run: |
