@@ -100,8 +100,8 @@ local function _read_installation_yaml()
     local f = io.open(path, "r"); if not f then return nil, nil end
     local installation_id, sync_dir
     for line in f:lines() do
-        line = line:gsub("%s+#.*$", "")
-        local key, val = line:match("^%s*([%w_]+)%s*:%s*(.+)$")
+        local cleaned = line:gsub("%s+#.*$", "")
+        local key, val = cleaned:match("^%s*([%w_]+)%s*:%s*(.+)$")
         if key and val then
             val = val:gsub('^%s*"(.*)"%s*$', "%1"):gsub("^%s*'(.*)'%s*$", "%1")
             val = val:gsub("^%s+", ""):gsub("%s+$", "")
@@ -163,7 +163,7 @@ end
 ------------------------------------------------------------
 -- 五、DB 与状态
 ------------------------------------------------------------
-local seq_db = userdb.LevelDb("lua/sequence")
+local seq_db = nil
 
 local seq_property = { ADJUST_KEY = "sequence_adjustment_code" }
 function seq_property.get(context) return context:get_property(seq_property.ADJUST_KEY) end
@@ -208,6 +208,7 @@ end
 
 local function get_input_adjustments(input)
     if not input or input == "" then return nil end
+    if not seq_db then return nil end
     local value_str = seq_db:fetch(input)
     return value_str and parse_adjustment_values(value_str) or nil
 end
@@ -420,6 +421,23 @@ end
 ------------------------------------------------------------
 local P = {}
 function P.init(env)
+    local config = env.engine.schema.config
+
+    local raw_db_name = config:get_string("super_sequence/db_name")
+    local db_name = raw_db_name
+
+    if db_name and db_name ~= "" then
+        db_name = db_name:gsub("\\", "/"):gsub("^/+", "")
+        while db_name:match("%.%./") do db_name = db_name:gsub("%.%./", "") end
+        db_name = db_name:gsub("%./", "")
+        if db_name == "" then db_name = "lua/sequence" end
+    else
+        db_name = "lua/sequence"
+    end
+    -- 3. 实例化 LevelDB
+    if not seq_db then 
+        seq_db = userdb.LevelDb(db_name) 
+    end
     seq_db:open()
     seq_data.device_name = _detect_device_name()
     init_once()
@@ -486,7 +504,7 @@ function P.func(key_event, env)
     end
 
     local key_repr = key_event:repr()
-    local function get_seq_key(type) return env.engine.schema.config:get_string("key_binder/sequence/" .. type) or DEFAULT_SEQ_KEY[type] end
+    local function get_seq_key(type) return env.engine.schema.config:get_string("super_sequence/" .. type) or DEFAULT_SEQ_KEY[type] end
 
     if key_repr == get_seq_key("up") then
         curr_state.offset = -1; curr_state.mode = curr_state.ADJUST_MODE.Adjust
@@ -516,6 +534,22 @@ function F.init(env)
     local sym = cfg and (cfg:get_string("paired_symbols/symbol") or cfg:get_string("paired_symbols/trigger")) or "\\"
     env.symbol = string.sub(sym, 1, 1)
     env.page_size = cfg and cfg:get_int("menu/page_size") or 5
+    -- 确保 Filter 也能正确初始化数据库
+    local raw_db_name = cfg:get_string("sequence/db_name")
+    local db_name = raw_db_name
+    if db_name and db_name ~= "" then
+        db_name = db_name:gsub("\\", "/"):gsub("^/+", "")
+        while db_name:match("%.%./") do db_name = db_name:gsub("%.%./", "") end
+        db_name = db_name:gsub("%./", "")
+        if db_name == "" then db_name = "lua/sequence" end
+    else
+        db_name = "lua/sequence"
+    end
+    
+    if not seq_db then 
+        seq_db = userdb.LevelDb(db_name)
+        seq_db:open()
+    end
 end
 function F.fini()
     if RUNTIME_EXPORT then seq_data.maybe_export(true) end

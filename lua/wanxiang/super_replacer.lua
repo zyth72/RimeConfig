@@ -1,6 +1,6 @@
 --[[
 super_replacer.lua 一个rime OpenCC替代品，更灵活地配置能力
-https://github.com/amzxyz/rime_wanxiang
+https://github.com/amzxyz/rime-wanxiang
 by amzxyz
 路径检测：UserDir > SharedDir
 支持 option: true (常驻启用)
@@ -86,8 +86,7 @@ local s_upper = string.upper
 local open = io.open
 local type = type
 local tonumber = tonumber
-local fmm_cache = {}
-local replacer_instance = nil
+local db_instances = {}
 
 -- 基础依赖
 local function safe_require(name)
@@ -158,7 +157,7 @@ local function rebuild(tasks, db, delimiter)
         if f then
             for line in f:lines() do
                 if line ~= "" and not s_match(line, "^%s*#") then
-                    local k, v = s_match(line, "^(%S+)%s+(.+)")
+                    local k, v = s_match(line, "^([^\t]+)\t+(.+)")
                     if k and v then
                         local orig_k = k
 
@@ -192,11 +191,11 @@ local function rebuild(tasks, db, delimiter)
 end
 
 -- 连接或重连数据库
-local function connect_db(db_name, current_version, delimiter, tasks, config_sig)
-    if replacer_instance then
-        local status, _ = pcall(function() return replacer_instance:fetch("___test___") end)
-        if status then return replacer_instance end
-        replacer_instance = nil
+local function connect_db(db_name, current_version, delimiter, tasks, config_sig, env_fmm_cache)
+    if db_instances[db_name] then
+        local status, _ = pcall(function() return db_instances[db_name]:fetch("___test___") end)
+        if status then return db_instances[db_name] end
+        db_instances[db_name] = nil
     end
 
     if not userdb then return nil end
@@ -224,7 +223,10 @@ local function connect_db(db_name, current_version, delimiter, tasks, config_sig
             if db.clear then db:clear() elseif db.empty then db:empty() end
             
             rebuild(tasks, db, delimiter)
-            fmm_cache = {} 
+            
+            -- 清理当前方案的缓存
+            for k, _ in pairs(env_fmm_cache) do env_fmm_cache[k] = nil end
+            
             db:meta_update("_wanxiang_ver", current_version)
             db:meta_update("_delim", delimiter)
             db:meta_update("_files_sig", current_signature) 
@@ -237,7 +239,7 @@ local function connect_db(db_name, current_version, delimiter, tasks, config_sig
     end
 
     if db:open_read_only() then
-        replacer_instance = db
+        db_instances[db_name] = db
         return db
     end
     
@@ -245,7 +247,7 @@ local function connect_db(db_name, current_version, delimiter, tasks, config_sig
 end
 
 -- FMM 分词转换算法
-local function segment_convert(text, db, prefix, split_pat)
+local function segment_convert(text, db, prefix, split_pat, fmm_cache)
     local offsets = get_utf8_offsets(text)
     local char_count = #offsets - 1
     local result_parts = {}
@@ -306,6 +308,9 @@ end
 
 -- 模块接口
 function M.init(env)
+    env.fmm_cache = {}
+    env.shared_pending = {}
+    env.shared_comments = {}
     local ns = env.name_space
     ns = s_gsub(ns, "^%*", "")
     ns = string.match(ns, "([^%.]+)$") or ns
@@ -314,12 +319,21 @@ function M.init(env)
     local user_dir = rime_api.get_user_data_dir()
     local shared_dir = rime_api.get_shared_data_dir()
 
-    local db_name = config:get_string(ns .. "/db_name") or "lua/replacer"
-    local delim = config:get_string(ns .. "/delimiter") or "|"
+    -- 1. 获取根节点 Map 对象
+    local cfg_root = config:get_map(ns)
+
+    -- 2. 读取基础配置
+    local db_name_val = cfg_root and cfg_root:get_value("db_name")
+    local db_name = db_name_val and db_name_val:get_string() or "lua/replacer"
+    
+    local delim_val = cfg_root and cfg_root:get_value("delimiter")
+    local delim = delim_val and delim_val:get_string() or "|"
     env.delimiter = delim
-    env.comment_format = config:get_string(ns .. "/comment_format") or "〔%s〕"
-  
-    local current_version = "v0.0.0"
+    
+    local comment_fmt_val = cfg_root and cfg_root:get_value("comment_format")
+    env.comment_format = comment_fmt_val and comment_fmt_val:get_string() or "〔%s〕"
+    
+    local current_version = "v0.0.1"
     if wanxiang and wanxiang.version then
         current_version = wanxiang.version
     end
@@ -327,11 +341,16 @@ function M.init(env)
     if wanxiang and wanxiang.get_input_method_type then
         env.input_type = wanxiang.get_input_method_type(env)
     end
-    env.chain = config:get_bool(ns .. "/chain")
-    if env.chain == nil then env.chain = false end
+    
+    local chain_val = cfg_root and cfg_root:get_value("chain")
+    env.chain = chain_val and chain_val:get_bool() or false
 
-    if delim == " " then env.split_pattern = "%S+"
-    else local esc = s_gsub(delim, "[%-%.%+%[%]%(%)%$%^%%%?%*]", "%%%1"); env.split_pattern = "([^" .. esc .. "]+)" end
+    if delim == " " then 
+        env.split_pattern = "%S+"
+    else 
+        local esc = s_gsub(delim, "[%-%.%+%[%]%(%)%$%^%%%?%*]", "%%%1")
+        env.split_pattern = "([^" .. esc .. "]+)" 
+    end
 
     env.rules = {}
     local tasks = {} 
@@ -347,116 +366,144 @@ function M.init(env)
         return user_path
     end
 
-    local rules_path = ns .. "/rules"
-    local rule_list = config:get_list(rules_path)
+    -- 3. 读取并遍历 rules 列表
+    local rules_item = cfg_root and cfg_root:get("rules")
+    local rule_list = rules_item and rules_item:get_list()
   
     if rule_list then
         for i = 0, rule_list.size - 1 do
-            local entry_path = rules_path .. "/@" .. i
+            local rule_item = rule_list:get_at(i)
+            local rule = rule_item and rule_item:get_map()
+            if not rule then goto continue_rule end
           
+            -- 解析 triggers
             local triggers = {}
             local opts_keys = {"option", "options"}
             for _, key in ipairs(opts_keys) do
-                local key_path = entry_path .. "/" .. key
-                local list = config:get_list(key_path)
-                if list then
-                    for k = 0, list.size - 1 do
-                        local val = config:get_string(key_path .. "/@" .. k)
-                        if val then insert(triggers, val) end
-                    end
-                else
-                    if config:get_bool(key_path) == true then
-                        insert(triggers, true)
-                    else
-                        local val = config:get_string(key_path)
-                        if val and val ~= "true" then insert(triggers, val) end
+                local opt_item = rule:get(key)
+                if opt_item then
+                    if opt_item.type == "kList" then
+                        local list = opt_item:get_list()
+                        for k = 0, list.size - 1 do
+                            local val = list:get_value_at(k)
+                            local str = val and val:get_string()
+                            if str then insert(triggers, str) end
+                        end
+                    elseif opt_item.type == "kScalar" then
+                        local val = opt_item:get_value()
+                        if val:get_bool() == true then
+                            insert(triggers, true)
+                        else
+                            local str = val:get_string()
+                            if str and str ~= "true" then insert(triggers, str) end
+                        end
                     end
                 end
             end
 
+            if #triggers == 0 then goto continue_rule end
+
+            -- 解析 tags
             local target_tags = nil
             local tag_keys = {"tag", "tags"}
             for _, key in ipairs(tag_keys) do
-                local key_path = entry_path .. "/" .. key
-                local list = config:get_list(key_path)
-                if list then
+                local tag_item = rule:get(key)
+                if tag_item then
                     if not target_tags then target_tags = {} end
-                    for k = 0, list.size - 1 do
-                        local val = config:get_string(key_path .. "/@" .. k)
-                        if val then target_tags[val] = true end
-                    end
-                else
-                    local val = config:get_string(key_path)
-                    if val then
-                        if not target_tags then target_tags = {} end
-                        target_tags[val] = true
+                    if tag_item.type == "kList" then
+                        local list = tag_item:get_list()
+                        for k = 0, list.size - 1 do
+                            local val = list:get_value_at(k)
+                            local str = val and val:get_string()
+                            if str then target_tags[str] = true end
+                        end
+                    elseif tag_item.type == "kScalar" then
+                        local val = tag_item:get_value()
+                        local str = val and val:get_string()
+                        if str then target_tags[str] = true end
                     end
                 end
             end
 
-            if #triggers > 0 then
-                local prefix = config:get_string(entry_path .. "/prefix") or ""
-                local mode = config:get_string(entry_path .. "/mode") or "append"
-                
-                local t9_opt = config:get_bool(entry_path .. "/t9_optimization")
-                local conversion_map = nil
-                local preedit_delim = nil
-                if t9_opt then
-                    conversion_map = {}
-                    local from_str = "abcdefghijklmnopqrstuvwxyz"
-                    local to_str   = "22233344455566677778889999"
-                    for char_idx = 1, #from_str do
-                        conversion_map[s_sub(from_str, char_idx, char_idx)] = s_sub(to_str, char_idx, char_idx)
-                    end
-                    preedit_delim = "=="
+            -- 解析各项参数
+            local prefix_val = rule:get_value("prefix")
+            local prefix = prefix_val and prefix_val:get_string() or ""
+            
+            local mode_val = rule:get_value("mode")
+            local mode = mode_val and mode_val:get_string() or "append"
+            
+            -- T9 优化逻辑
+            local t9_val = rule:get_value("t9_optimization")
+            local t9_opt = t9_val and t9_val:get_bool() or false
+            local conversion_map = nil
+            local preedit_delim = nil
+            
+            if t9_opt then
+                conversion_map = {}
+                local from_str = "abcdefghijklmnopqrstuvwxyz"
+                local to_str   = "22233344455566677778889999"
+                for char_idx = 1, #from_str do
+                    conversion_map[s_sub(from_str, char_idx, char_idx)] = s_sub(to_str, char_idx, char_idx)
                 end
+                preedit_delim = "=="
+            end
 
-                local comment_mode = config:get_string(entry_path .. "/comment_mode")
-                if not comment_mode then comment_mode = "comment" end
-                local fmm = config:get_bool(entry_path .. "/sentence")
-                if fmm == nil then fmm = false end
-                
-                -- 解析 cand_type
-                local custom_cand_type = config:get_string(entry_path .. "/cand_type")
+            local comment_mode_val = rule:get_value("comment_mode")
+            local comment_mode = comment_mode_val and comment_mode_val:get_string() or "comment"
+            
+            local fmm_val = rule:get_value("sentence")
+            local fmm = fmm_val and fmm_val:get_bool() or false
+            
+            local custom_cand_type_val = rule:get_value("cand_type")
+            local custom_cand_type = custom_cand_type_val and custom_cand_type_val:get_string()
 
-                local always_qty = 1
-                local always_idx = 1
-                if mode == "abbrev" then
-                    local rule_str = config:get_string(entry_path .. "/abbrev_rule") or "1,1"
-                    local qty_str, idx_str = s_match(rule_str, "^(%d+)%s*,%s*(%d+)$")
-                    always_qty = tonumber(qty_str) or 1
-                    always_idx = tonumber(idx_str) or 1
-                end
+            local always_qty = 1
+            local always_idx = 1
+            if mode == "abbrev" then
+                local rule_str_val = rule:get_value("abbrev_rule")
+                local rule_str = rule_str_val and rule_str_val:get_string() or "1,1"
+                local qty_str, idx_str = s_match(rule_str, "^(%d+)%s*,%s*(%d+)$")
+                always_qty = tonumber(qty_str) or 1
+                always_idx = tonumber(idx_str) or 1
+            end
 
-                insert(env.rules, {
-                    triggers = triggers,
-                    tags = target_tags,
-                    prefix = prefix,
-                    mode  = mode,
-                    always_qty = always_qty,
-                    always_idx = always_idx,
-                    comment_mode = comment_mode,
-                    fmm = fmm,
-                    preedit_delim = preedit_delim,
-                    t9_opt = t9_opt,
-                    cand_type = custom_cand_type
-                })
+            insert(env.rules, {
+                triggers = triggers,
+                tags = target_tags,
+                prefix = prefix,
+                mode  = mode,
+                always_qty = always_qty,
+                always_idx = always_idx,
+                comment_mode = comment_mode,
+                fmm = fmm,
+                preedit_delim = preedit_delim,
+                t9_opt = t9_opt,
+                cand_type = custom_cand_type
+            })
 
-                local keys_to_check = {"files", "file"}
-                for _, key in ipairs(keys_to_check) do
-                    local d_path = entry_path .. "/" .. key
-                    local list = config:get_list(d_path)
-                    if list then
+            -- 解析文件路径列表
+            local keys_to_check = {"files", "file"}
+            for _, key in ipairs(keys_to_check) do
+                local file_item = rule:get(key)
+                if file_item then
+                    if file_item.type == "kList" then
+                        local list = file_item:get_list()
                         for j = 0, list.size - 1 do
-                            local p = resolve_path(config:get_string(d_path .. "/@" .. j))
+                            local val = list:get_value_at(j)
+                            local str = val and val:get_string()
+                            local p = resolve_path(str)
                             if p then insert(tasks, { path = p, prefix = prefix, conversion = conversion_map, preedit_delim = preedit_delim }) end
                         end
-                    else
-                        local p = resolve_path(config:get_string(d_path))
+                    elseif file_item.type == "kScalar" then
+                        local val = file_item:get_value()
+                        local str = val and val:get_string()
+                        local p = resolve_path(str)
                         if p then insert(tasks, { path = p, prefix = prefix, conversion = conversion_map, preedit_delim = preedit_delim }) end
                     end
                 end
             end
+
+            ::continue_rule::
         end
     end
     
@@ -466,14 +513,17 @@ function M.init(env)
     end
     local config_sig = concat(config_sig_parts, "|")
 
-    env.db = connect_db(db_name, current_version, env.delimiter, tasks, config_sig)
+    -- 传入 env.fmm_cache
+    env.db = connect_db(db_name, current_version, env.delimiter, tasks, config_sig, env.fmm_cache)
 end
 
 function M.fini(env)
     env.db = nil
+    env.fmm_cache = nil
+    env.shared_pending = nil
+    env.shared_comments = nil
 end
-local shared_pending = {}
-local shared_comments = {}
+
 local function clear_table(t)
     for i = 1, #t do
         t[i] = nil
@@ -502,7 +552,7 @@ function M.func(input, env)
     local is_chain = env.chain
 
     if not ctx:is_composing() or ctx.input == "" then
-        fmm_cache = {}
+        for k, _ in pairs(env.fmm_cache) do env.fmm_cache[k] = nil end
         collectgarbage("step", 200)
         for cand in input:iter() do yield(cand) end
         return
@@ -522,10 +572,11 @@ function M.func(input, env)
         local current_text = cand.text
         local show_main = true
         local current_main_comment = cand.comment
-        local matched_cand_type = nil
+        local matched_cand_type = nil 
       
-        clear_table(shared_pending)
-        clear_table(shared_comments)
+        -- 使用 env 的共享表
+        clear_table(env.shared_pending)
+        clear_table(env.shared_comments)
       
         for _, t in ipairs(rules) do
             if t.mode ~= "abbrev" then
@@ -547,24 +598,35 @@ function M.func(input, env)
                     local query_text = is_chain and current_text or cand.text
                     local key = t.prefix .. query_text
                     local val = db:fetch(key)
-                  
+                    if not val and string.find(query_text, "%u") then
+                        local lower_key = t.prefix .. string.lower(query_text)
+                        val = db:fetch(lower_key)
+                    end
                     if not val and t.fmm then
-                        local seg_result = segment_convert(query_text, db, t.prefix, split_pat)
+                        local seg_result = segment_convert(query_text, db, t.prefix, split_pat, env.fmm_cache)
                         if seg_result ~= query_text then val = seg_result end
                     end
                   
                     if val then
-                        matched_cand_type = t.cand_type or matched_cand_type
+                        matched_cand_type = t.cand_type or matched_cand_type 
 
                         local mode = t.mode
                         local rule_comment = ""
                         if t.comment_mode == "text" then rule_comment = cand.text
                         elseif t.comment_mode == "comment" then rule_comment = cand.comment end
-
+                        if mode ~= "comment" and rule_comment ~= "" then
+                            rule_comment = s_format(comment_fmt, rule_comment)
+                        end
                         if mode == "comment" then
                             local parts = {}
-                            for p in s_gmatch(val, split_pat) do insert(parts, p) end
-                            insert(shared_comments, concat(parts, " "))
+                            for p in s_gmatch(val, split_pat) do 
+                                if p ~= input_code then
+                                    insert(parts, p) 
+                                end
+                            end
+                            if #parts > 0 then
+                                insert(env.shared_comments, concat(parts, " "))
+                            end
                         elseif mode == "replace" then
                             if is_chain then
                                 local first = true
@@ -575,18 +637,18 @@ function M.func(input, env)
                                         elseif t.comment_mode == "text" then current_main_comment = cand.text end
                                         first = false
                                     else
-                                        insert(shared_pending, { text=p, comment=rule_comment })
+                                        insert(env.shared_pending, { text=p, comment=rule_comment })
                                     end
                                 end
                             else
                                 show_main = false
                                 for p in s_gmatch(val, split_pat) do
-                                    insert(shared_pending, { text=p, comment=rule_comment })
+                                    insert(env.shared_pending, { text=p, comment=rule_comment })
                                 end
                             end
                         elseif mode == "append" then
                             for p in s_gmatch(val, split_pat) do
-                                insert(shared_pending, { text=p, comment=rule_comment })
+                                insert(env.shared_pending, { text=p, comment=rule_comment })
                             end
                         end
                     end
@@ -594,14 +656,10 @@ function M.func(input, env)
             end
         end
 
-        if #shared_comments > 0 then
-            local comment_str = concat(shared_comments, " ")
+        if #env.shared_comments > 0 then
+            local comment_str = concat(env.shared_comments, " ")
             local fmt = s_format(comment_fmt, comment_str)
-            if current_main_comment and current_main_comment ~= "" then
-                current_main_comment = current_main_comment .. fmt
-            else
-                current_main_comment = fmt
-            end
+            current_main_comment = fmt 
         end
 
         if show_main then
@@ -617,7 +675,7 @@ function M.func(input, env)
             end
         end
 
-        for _, item in ipairs(shared_pending) do
+        for _, item in ipairs(env.shared_pending) do
             if not (show_main and item.text == current_text) then
                 local final_type = matched_cand_type or "derived"
                 local nc = Candidate(final_type, cand.start, cand._end, item.text, item.comment)
@@ -656,23 +714,21 @@ function M.func(input, env)
                 end
             end
 
-            if is_active and is_tag_match and input_code ~= "" then -- 加上输入非空保护
+            if is_active and is_tag_match and input_code ~= "" then 
                 local key = t.prefix .. input_code
                 local val = db:fetch(key) or (not s_match(input_code, "[A-Z]") and db:fetch(t.prefix .. s_upper(input_code)))
                 
                 if val then
                     local count = 0
                     for p in s_gmatch(val, split_pat) do
-                        local item_text, item_preedit = parse_item(p, t.preedit_delim) -- T9预编辑切割
+                        local item_text, item_preedit = parse_item(p, t.preedit_delim) 
 
                         if not seen_texts[item_text] then
                             seen_texts[item_text] = true
                             
-                            --简码也支持强制注入 type
                             local final_type = t.cand_type or "abbrev"
                             local abbrev_cand = Candidate(final_type, seg and seg.start or 0, seg and seg._end or #input_code, item_text, "")
                             
-                            -- 附加预编辑码
                             if item_preedit and item_preedit ~= "" then
                                 abbrev_cand.preedit = item_preedit
                             end
@@ -721,12 +777,10 @@ function M.func(input, env)
     -- 清空候车室机制
     local function flush_buffer()
         if has_exact_phrase then
-            -- 正常有词,执行定位插队，替补直接销毁
             for _, cand in ipairs(top_buffer) do
                 output_cand(cand)
             end
         else
-            -- 空码救场
             for _, cand in ipairs(top_buffer) do
                 local processed_cands = process_rules(cand)
                 for _, pc in ipairs(processed_cands) do
@@ -738,7 +792,6 @@ function M.func(input, env)
                 end
             end
             
-            -- 立刻倾泻所有主力简码（无视设定的 index 坑位了，紧紧跟在后面）
             while #always_cands > 0 do
                 local ac = table.remove(always_cands, 1)
                 local ac_processed = process_rules(ac.cand)
@@ -751,7 +804,6 @@ function M.func(input, env)
                 end
             end
             
-            -- 立刻倾泻所有替补简码
             for _, lc in ipairs(lazy_cands) do
                 local lc_processed = process_rules(lc)
                 for _, lpc in ipairs(lc_processed) do
@@ -787,12 +839,12 @@ function M.func(input, env)
         end
     end
 
-    -- 第三步：如果流从头到尾都没跌破 99（很短的流），做最后的兜底收尾
+    -- 第三步：如果流从头到尾都没跌破 99
     if not quality_dropped then
         flush_buffer()
     end
 
-    -- 清理残余（应对 index 设定极大，流长度不够的情况）
+    -- 清理残余
     while #always_cands > 0 do
         local ac = table.remove(always_cands, 1)
         local ac_processed = process_rules(ac.cand)

@@ -1,6 +1,4 @@
--- author: https://github.com/ChaosAlphard
--- 说明 https://github.com/gaboolic/rime-shuangpin-fuzhuma/pull/41
-
+--  Copyright (c) 2024 amzxyz
 -- 原有功能：
 -- 单个随机数生成、三角函数、幂函数、指数函数、对数函数求值
 -- 计算n次方根、平均值、方差、阶乘、角度与弧度的相互转化

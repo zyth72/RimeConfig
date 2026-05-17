@@ -1,9 +1,8 @@
 -- 欢迎使用万象拼音方案
 -- @amzxyz
--- https://github.com/amzxyz/rime_wanxiang
+-- https://github.com/amzxyz/rime-wanxiang
 ------------------------------------
 ------wirting by 98wubi Group-------
-------http://98wb.ys168.com/--------
 -----万象新增节日候选,格式化问候语,重写农历倒计
 -- *******农历节气计算部分
 --=====角度变换===============
@@ -916,7 +915,8 @@ function GetNowTimeJq(date)
     end
     JQtable2 = GetNextJQ(date)
     if tonumber(string.sub(date, 5, 8)) < 322 then
-        JQtable1 = GetNextJQ(tonumber(string.sub(date, 1, 4)) - 1 .. string.sub(date, 5, 8))
+        --JQtable1 = GetNextJQ(tonumber(string.sub(date, 1, 4)) - 1 .. string.sub(date, 5, 8))
+        JQtable1 = GetNextJQ(tonumber(string.sub(date, 1, 4)) - 1 .. "0101")
         -- log.info(#JQtable1)
         if tonumber(string.sub(date, 5, 8)) < 108 then
             for i = 20, 24 do
@@ -1154,8 +1154,6 @@ function GanZhiLi:getShiZhi()
     return self:calR2(idx, 12)
 end
 
---=================以下是测试代码=============
-
 local jqB = { -- 节气表
     "立春", "雨水", "惊蛰", "春分", "清明", "谷雨", "立夏", "小满", "芒种", "夏至", "小暑", "大暑",
     "立秋", "处暑", "白露", "秋分", "寒露", "霜降", "立冬", "小雪", "大雪", "冬至", "小寒", "大寒" }
@@ -1345,16 +1343,6 @@ function diffDate(date1, date2)
     end
     return total
 end
-
--- 公历倒计时(每年)
-local function diffDate2(date1, date2)
-    while diffDate(date1, date2) == -1 do
-        date2 = tointeger(date2 + 1000000)
-    end
-    result = diffDate(date1, date2)
-    return result
-end
--- 公历倒计时结束
 
 -- 返回当年过了多少天
 function leaveDate(y)
@@ -1883,42 +1871,7 @@ local function QueryLunarInfo(env, date)
     end
     return result
 end
---[[ ---------------测试----------------
-local n=QueryLunarInfo(199105)
-for i=1,#n do
-    log.info(n[i][1]..n[i][2])
-end
---]] ----------------------------------
 
---[[
--- 农历倒计时
-local function nl_shengri(y, m, d)
-  nlsrsj = y .. m .. d -- 农历时间
-  date1 = os.date("%Y%m%d")
-  date2 = LunarDate2Date(nlsrsj, 0)
-  m = string.match(date2, "年(.-)月")
-  if #m == "2" then
-    date2 = string.gsub(date2, "年", "", "1")
-  else
-    date2 = string.gsub(date2, "年", "0", "1")
-  end
-  d = string.match(date2, "月(.-)日")
-  if #d == "2" then
-    date2 = string.gsub(date2, "月", "", "1")
-  else
-    date2 = string.gsub(date2, "月", "0", "1")
-  end
-  date2 = string.gsub(date2, "日", "", "1")
-
-end
-
-local function nl_shengri2(y, m, d)
-  while nl_shengri(y, m, d) == -1 do
-    y = tointeger(y + 1)
-  end
-  result = nl_shengri(y, m, d)
-  return result
-end  ]] --
 -- 万象新增三伏天计算函数
 -- 输入yyyymmdd返回:初伏(1)形式字符串
 -- 起点：夏至之后(查询节气表找到夏至的日期)
@@ -2098,7 +2051,7 @@ local month_map = {
 local function nl_shengri(y, m, d)
     -- 获取当前日期
     local date1 = os.date("%Y%m%d")
-    nlsrsj = y .. m .. d                  -- 农历时间
+    local nlsrsj = y .. m .. d                  -- 农历时间
     -- 提取农历日期的年份
     local year = string.sub(nlsrsj, 1, 4) -- 提取“2015”从“20150621”
 
@@ -2138,20 +2091,20 @@ local function nl_shengri(y, m, d)
     -- 继续处理年份和月份，格式化为公历格式
     m = string.match(date2, "年(.-)月")
     if #m == 2 then
-        date2 = string.gsub(date2, "年", "", "1")
+        date2 = string.gsub(date2, "年", "", 1)
     else
-        date2 = string.gsub(date2, "年", "0", "1")
+        date2 = string.gsub(date2, "年", "0", 1)
     end
     d = string.match(date2, "月(.-)日")
     if #d == 2 then
-        date2 = string.gsub(date2, "月", "", "1")
+        date2 = string.gsub(date2, "月", "", 1)
     else
-        date2 = string.gsub(date2, "月", "0", "1")
+        date2 = string.gsub(date2, "月", "0", 1)
     end
-    date2 = string.gsub(date2, "日", "", "1")
+    date2 = string.gsub(date2, "日", "", 1)
 
     -- 计算日期差异
-    result = diffDate(date1, date2)
+    local result = diffDate(date1, date2)
     return result
 end
 -- 二次循环跨年调用
@@ -2159,7 +2112,7 @@ local function nl_shengri2(y, m, d)
     while nl_shengri(y, m, d) == -1 do
         y = math.floor(y + 1)
     end
-    result = nl_shengri(y, m, d)
+    local result = nl_shengri(y, m, d)
     return result
 end
 
@@ -3032,71 +2985,71 @@ local function translator(input, seg, env)
         -- 获取最近的三个节气
         local jqs = GetNowTimeJq(os.date("%Y%m%d", now))
         local upcoming_jqs = {}
+        local jieqi_days = {}
         local zero_jieqi = nil -- 记录今天的节气
 
-        -- 计算距离某个节气的天数
+        -- ====== 恢复被不小心删掉的计算函数 ======
         local function days_until_jieqi(jieqi)
             local jieqi_date = jieqi:match("(%d+-%d+-%d+)$") -- 提取节气日期部分
             local target_time = jieqi_date:gsub("-", "")
             local diff_days = days_until(target_time)
             return diff_days
         end
-        -- 遍历候选中最近的 3 个节气
-        for i = 1, math.min(3, #jqs) do
+        -- ==========================================
+
+        -- 遍历寻找今天和未来的节气，直到凑够2个未来节气
+        for i = 1, #jqs do
             local jieqi = jqs[i]
             local diff_days = days_until_jieqi(jieqi)
 
             if diff_days == 0 then
-                local jieqi_name = jieqi:match("^(%S+)")
-                zero_jieqi = jieqi_name -- 记录今天的节气
+                zero_jieqi = jieqi:match("^(%S+)") -- 记录今天的节气
             elseif diff_days > 0 then
                 table.insert(upcoming_jqs, jieqi)
+                table.insert(jieqi_days, diff_days)
+                if #upcoming_jqs >= 2 then
+                    break -- 已经拿到 2 个未来的节气，停止循环
+                end
             end
         end
 
-        -- 获取每个节气的距离天数
-        local jieqi_days = {}
-        for _, jieqi in ipairs(upcoming_jqs) do
-            table.insert(jieqi_days, days_until_jieqi(jieqi))
+        -- 防御性兜底：万一后面没有足够的节气，用未知填充，彻底杜绝 nil 报错
+        while #upcoming_jqs < 2 do
+            table.insert(upcoming_jqs, "未知节气")
+            table.insert(jieqi_days, 0)
         end
 
-        -- 遍历前三个节日
+        -- 获取节日数据
         local upcoming_holidays = get_upcoming_holidays() or {}
         local holiday_data = {}
-        local zero_holiday = nil 
+        local zero_holidays = {} -- 使用数组记录今天的节日，因为可能多个节日重合
 
-        local filtered_holidays = {}
-        local zero_found = false
-
-        for i = 1, math.min(3, #upcoming_holidays) do
+        -- 遍历寻找今天和未来的节日，直到凑够2个未来节日
+        for i = 1, #upcoming_holidays do
             local holiday = upcoming_holidays[i]
-
             if holiday[3] == 0 then
-                zero_holiday = holiday[1] 
-                zero_found = true
-            else
-                table.insert(filtered_holidays, holiday)
+                table.insert(zero_holidays, holiday[1]) -- 记录今天的节日
+            elseif holiday[3] > 0 then
+                local hy, hm, hd = holiday[2]:match("^(%d+)年(%d+)月(%d+)日")
+                if hy then
+                    local formatted_date = string.format("%04d-%02d-%02d", tonumber(hy), tonumber(hm), tonumber(hd))
+                    table.insert(holiday_data, { holiday[1], formatted_date, holiday[3] })
+                    if #holiday_data >= 2 then
+                        break -- 已经拿到 2 个未来的节日，停止循环
+                    end
+                end
             end
         end
 
-        if zero_found then
-            for i = math.max(1, #filtered_holidays - 1), #filtered_holidays do
-                local holiday = filtered_holidays[i]
-                local hy, hm, hd = holiday[2]:match("^(%d+)年(%d+)月(%d+)日")
-                if hy then
-                    local formatted_date = string.format("%04d-%02d-%02d", tonumber(hy), tonumber(hm), tonumber(hd))
-                    table.insert(holiday_data, { holiday[1], formatted_date, holiday[3] })
-                end
-            end
-        else
-            for i = 1, math.min(2, #filtered_holidays) do
-                local holiday = filtered_holidays[i]
-                local hy, hm, hd = holiday[2]:match("^(%d+)年(%d+)月(%d+)日")
-                if hy then
-                    local formatted_date = string.format("%04d-%02d-%02d", tonumber(hy), tonumber(hm), tonumber(hd))
-                    table.insert(holiday_data, { holiday[1], formatted_date, holiday[3] })
-                end
-            end
+        -- 将今天的多个节日拼接（例如 "龙抬头 春分"）
+        local zero_holiday_str = nil
+        if #zero_holidays > 0 then
+            zero_holiday_str = table.concat(zero_holidays, " ") .. " "
+        end
+
+        -- 防御性兜底：万一节日不足2个
+        while #holiday_data < 2 do
+            table.insert(holiday_data, { "无", "未知", 0 })
         end
 
         -- 获取三伏天
@@ -3136,20 +3089,20 @@ local function translator(input, seg, env)
             week_info_str = string.format("◈ 本年第[ %d ]周，本月第[ %d ]周", week_of_year, week_of_month)
         end
 
-        -- 生成最终信息字符串
-        local summary = string.format("※嗨，我是万象小助手，%s\n", greeting) .. line .. "\n" ..
-            string.format("☉ 今天是：%s%s%s\n", zero_holiday or "", zero_jieqi or "", sanfu) ..
-            string.format("☉ %d年%d月%d日 %s\n", year, month, day, week_day_str) ..
-            string.format("☉ 农历：%s\n", lunar_info_str) .. line .. "\n" ..
-            string.format("◉ %d进度：\n", year) .. 
-            string.format("◈%s\n", progress_bar) ..
-            string.format("%s\n", week_info_str) ..
-            string.format("◈ 今岁第[ %d ]天 (余 %d 天)\n", day_of_year, days_in_year - day_of_year) .. 
-            line .. "\n" ..
-            string.format("◉ 倒数日：\n") ..
-            string.format("◈ %s %s < [ %d ]天\n", holiday_data[1][1], holiday_data[1][2], holiday_data[1][3]) ..
-            string.format("◈ %s %s < [ %d ]天\n", holiday_data[2][1], holiday_data[2][2], holiday_data[2][3]) ..
-            string.format("◈ %s < [ %d ]天\n", upcoming_jqs[1], jieqi_days[1]) ..
+        local zwsp = "\226\128\139"
+        local summary = string.format("※嗨，我是万象小助手，%s", greeting) .. zwsp .. "\n" .. line .. zwsp .. "\n" ..
+            string.format("☉ 今天是：%s%s%s", zero_holiday_str or "", zero_jieqi or "", sanfu) .. zwsp .. "\n" ..
+            string.format("☉ %d年%d月%d日 %s", year, month, day, week_day_str) .. zwsp .. "\n" ..
+            string.format("☉ 农历：%s", lunar_info_str) .. zwsp .. "\n" .. line .. zwsp .. "\n" ..
+            string.format("◉ %d进度：", year) .. zwsp .. "\n" .. 
+            string.format("◈%s", progress_bar) .. zwsp .. "\n" ..
+            string.format("%s", week_info_str) .. zwsp .. "\n" ..
+            string.format("◈ 今岁第[ %d ]天 (余 %d 天)", day_of_year, days_in_year - day_of_year) .. zwsp .. "\n" .. 
+            line .. zwsp .. "\n" ..
+            string.format("◉ 倒数日：") .. zwsp .. "\n" ..
+            string.format("◈ %s %s < [ %d ]天", holiday_data[1][1], holiday_data[1][2], holiday_data[1][3]) .. zwsp .. "\n" ..
+            string.format("◈ %s %s < [ %d ]天", holiday_data[2][1], holiday_data[2][2], holiday_data[2][3]) .. zwsp .. "\n" ..
+            string.format("◈ %s < [ %d ]天", upcoming_jqs[1], jieqi_days[1]) .. zwsp .. "\n" ..
             string.format("◈ %s < [ %d ]天", upcoming_jqs[2], jieqi_days[2])
 
         local candidates = { { summary, "" } }

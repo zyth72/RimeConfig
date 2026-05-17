@@ -1,7 +1,7 @@
 -- charset_filter.lua
 -- 功能：独立的字符集过滤与兜底组件
 -- 逻辑：
--- 1. 支持配置多个选项，开启多个选项时 Base 和 Addlist 取并集（任意一个允许即放行），Blacklist 一票否决。
+-- 1. 支持配置多个选项，开启多个选项时 Base 和 Addlist 取并集，Blacklist 一票否决。
 -- 2. 单字如果不符合字符集，直接丢弃（删除），不进行兜底。
 -- 3. 词组如果包含生僻字，尝试从历史记录寻找同长度拼音的词组进行兜底。
 
@@ -12,10 +12,6 @@ local M = {}
 local sub = string.sub
 local utf8_codes = utf8.codes
 local utf8_len = utf8.len
-
--- ==========================================
--- 内部辅助函数
--- ==========================================
 
 -- 检查交集
 local function check_intersection(db_attr, config_base_set)
@@ -29,7 +25,7 @@ local function check_intersection(db_attr, config_base_set)
     return false
 end
 
--- 核心判定逻辑：检查单个 codepoint 是否在允许的字符集中（支持多开关并集）
+-- 核心判定逻辑：检查单个 codepoint 是否在允许的字符集中
 local function codepoint_in_charset(env, ctx, codepoint, text)
     if not env.charset_db then return true end
 
@@ -41,7 +37,6 @@ local function codepoint_in_charset(env, ctx, codepoint, text)
     local is_blacklisted = false
 
     for _, rule in ipairs(filters) do
-        -- 检查当前规则开关是否开启
         local is_rule_active = false
         for _, opt_name in ipairs(rule.options) do
             if opt_name == "true" or ctx:get_option(opt_name) then
@@ -79,56 +74,28 @@ local function codepoint_in_charset(env, ctx, codepoint, text)
     end
 
     -- 如果没有任何规则开启，默认全放行
-    if active_options_count == 0 then
-        return true
-    end
-
+    if active_options_count == 0 then return true end
     -- 命中黑名单，直接丢弃
-    if is_blacklisted then
-        return false
-    end
+    if is_blacklisted then return false end
 
     return is_allowed
 end
 
--- 检查单字/全词是否符合字符集（供单字快速判定用）
-local function in_charset(env, ctx, text)
+-- 严格检查整个文本（单字/词组）是否完全符合字符集
+local function is_text_in_charset(env, ctx, text)
     if not text or text == "" then return true end
-
-    local cp_count = 0
-    local target_cp = nil
-    for _, cp in utf8_codes(text) do
-        cp_count = cp_count + 1
-        if cp_count > 1 then return true end -- 大于一个字交由词组专用逻辑处理
-        target_cp = cp
-    end
-
-    if cp_count == 0 or not target_cp then return true end
-    local char = utf8.char(target_cp)
-
-    if not wanxiang.IsChineseCharacter(char) then return true end
-
-    return codepoint_in_charset(env, ctx, target_cp, char)
-end
-
--- 精准探测：检查词组中是否包含生僻字
-local function check_text_has_rare_char(env, ctx, text)
-    if not text or text == "" then return false end
     for _, codepoint in utf8_codes(text) do
         local character = utf8.char(codepoint)
         if wanxiang.IsChineseCharacter(character) then
             if not codepoint_in_charset(env, ctx, codepoint, character) then
-                return true
+                return false -- 只要遇到一个生僻字/黑名单字，直接返回 false
             end
         end
     end
-    return false
+    return true
 end
 
--- ==========================================
 -- 生命周期管理
--- ==========================================
-
 function M.init(env)
     local cfg = env.engine and env.engine.schema and env.engine.schema.config
     
@@ -225,11 +192,7 @@ function M.fini(env)
     env.filters = nil
     env.phrase_history_dict = nil
 end
-
--- ==========================================
 -- 核心过滤流水线
--- ==========================================
-
 function M.func(input, env)
     local ctx = env.engine.context
     local code = ctx.input or ""
@@ -260,9 +223,9 @@ function M.func(input, env)
     end
 
     -- 3. 遍历候选词
-    local has_recorded_history = false -- 【修复点】：只有第一个有效产出的词才记入历史
+    local has_recorded_history = false 
     
-    -- 内部帮助函数：记录历史并推入管道
+    -- 内部帮助函数：记录第一个合法词并推入管道
     local function yield_and_record(cand, text)
         if not has_recorded_history and text and text ~= "" and (utf8_len(text) or 0) >= 1 then
             env.phrase_history_dict[#code] = text
@@ -279,24 +242,26 @@ function M.func(input, env)
             yield_and_record(cand, text)
         else
             local text_length = utf8_len(text)
+            -- 判断文本（无论单字还是词组）是否合规
+            local text_is_valid = is_text_in_charset(env, ctx, text)
 
             if text_length < 2 then
-                -- 单字过滤：如果不符合就直接丢弃，不执行兜底，也不执行记录
-                if in_charset(env, ctx, text) then
+                -- 【单字逻辑】：如果不符合就直接丢弃，不执行兜底
+                if text_is_valid then
                     yield_and_record(cand, text)
                 end
             else
-                -- 词组过滤
-                local has_rare_character = check_text_has_rare_char(env, ctx, text)
-                
-                if not has_rare_character then
+                -- 【词组逻辑】
+                if text_is_valid then
                     -- 不含生僻字，直接放行
                     yield_and_record(cand, text)
                 else
                     -- 含有生僻字，开始词组兜底
                     local fallback_text = nil
                     local current_code_length = #code
-                    for history_length = current_code_length - 1, 1, -1 do
+                    
+                    -- 必须从 current_code_length 开始找，否则会错过刚打出来的首选词！
+                    for history_length = current_code_length, 1, -1 do
                         local history_text = env.phrase_history_dict[history_length]
                         if history_text and utf8_len(history_text) == text_length then
                             fallback_text = history_text
@@ -314,8 +279,8 @@ function M.func(input, env)
                         local nc = Candidate(cand.type, cand.start, cand._end, fallback_text, cand.comment or "")
                         nc.preedit = preedit_text
                         
-                        -- 验证兜底词自身不是生僻词
-                        if in_charset(env, ctx, nc.text) then
+                        -- 验证兜底词自身绝对不含生僻字
+                        if is_text_in_charset(env, ctx, nc.text) then
                             yield_and_record(nc, nc.text)
                         end
                     end

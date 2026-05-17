@@ -8,7 +8,7 @@ local function translator(input, seg, env)
         -- 候选3: 当前版本号（加上“增强版”或“标准版”前缀）
         yield(Candidate("version", seg.start, seg._end, version_prefix  .. wanxiang.version, ""))
         -- 候选1: GitHub 网址
-        yield(Candidate("url", seg.start, seg._end, "https://github.com/amzxyz/rime_wanxiang", ""))
+        yield(Candidate("url", seg.start, seg._end, "https://github.com/amzxyz/rime-wanxiang", ""))
         -- 候选2: CNB 网址
         yield(Candidate("url", seg.start, seg._end, "https://cnb.cool/amzxyz/rime-wanxiang", "")) 
     end

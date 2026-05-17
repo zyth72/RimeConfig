@@ -1,4 +1,4 @@
-﻿-- 来源 https://github.com/yanhuacuo/98wubi-tables > http://98wb.ysepan.com/
+-- 来源 https://github.com/yanhuacuo/98wubi-tables > http://98wb.ysepan.com/
 -- 数字、金额大写
 -- 触发前缀默认为 recognizer/patterns/number 的第 2 个字符，即 R
 
@@ -91,8 +91,14 @@ local function number2cnChar(num, flag, digitUnit, wordFigure) --flag=0中文小
     result = result:gsub(wordFigure[1] .. wordFigure[1], wordFigure[1])
     result = result:gsub(wordFigure[1] .. "$", "")
     if lens > 4 then result = result:gsub("^" .. wordFigure[2] .. wordFigure[3], wordFigure[3]) end
-    if result ~= "" then result = result .. wordFigure[4] else result = "数值超限！" end
-
+    if result == "" and (num == "0" or num == "") then
+        result = wordFigure[1]
+    end
+    if result ~= "" then
+        result = result .. wordFigure[4]
+    else
+        result = "数值超限！"
+    end
     return result
 end
 
@@ -141,7 +147,6 @@ local function number_translatorFunc(num)
     if string.len(numberPart.int) > 4 and number2cnCharInt:find('^拾[壹贰叁肆伍陆柒捌玖]?') and number2cnCharInt:find('[万亿]') then -- 简易地规避 utf8 匹配问题
         local number2cnCharInt_var = number2cnCharInt:gsub('^拾', '壹拾')
         table.insert(result, { number2cnCharInt_var .. number2cnCharDec, "" })
-        -- 会计书写要求 https://github.com/iDvel/rime-ice/issues/989
     else
         table.insert(result, { number2cnCharInt .. number2cnCharDec, "" })
     end

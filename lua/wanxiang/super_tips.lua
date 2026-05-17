@@ -1,16 +1,21 @@
 -- 万象家族lua,超级提示,表情\化学式\方程式\简码等等直接上屏,不占用候选位置
 -- 采用leveldb数据库,支持大数据遍历,支持多种类型混合,多种拼音编码混合,维护简单
 -- 支持候选匹配和编码匹配两种，候选支持方向键高亮遍历
--- https://github.com/amzxyz/rime_wanxiang
---     - lua_processor@*super_tips
---     key_binder/tips_key: "slash" # 上屏按键配置
---     tips/disabled_types: [] # 禁用的 tips 类型
+-- https://github.com/amzxyz/rime-wanxiang
+-- 配置示例：
+-- super_tips:
+--   db_name: "lua/tips"   # 可选，自定义数据库名称/路径，默认值为 "lua/tips"
+--   tips_key: "slash"     # 上屏按键配置
+--   disabled_types: []    # 禁用的 tips 类型
+--   files:                # 可选，自定义数据文件列表，不配置时使用默认文件
+--     - lua/data/my_tips.txt
+--     - lua/data/tips_show.txt
 
 local wanxiang = require("wanxiang/wanxiang")
 local userdb = require("wanxiang/userdb")
 
--- 尝试打开数据库
-local tips_db = userdb.LevelDb("lua/tips")
+-- 声明数据库变量，待配置加载后初始化
+local tips_db 
 
 local tips = {}
 
@@ -19,9 +24,24 @@ tips.status = "pending"
 
 ---@type table<string, boolean>
 tips.disabled_types = {}
-tips.preset_file_path = wanxiang.get_filename_with_fallback("lua/data/tips_show.txt")
-tips.user_override_path = rime_api.get_user_data_dir() .. "/lua/data/tips_user.txt"
--- 光速文件特征采样
+
+-- 默认文件路径（在未配置 files 时使用）
+tips.default_preset = wanxiang.get_filename_with_fallback("lua/data/tips_show.txt")
+tips.default_user = rime_api.get_user_data_dir() .. "/lua/data/tips_user.txt"
+
+-- 路径解析：优先用户目录，其次共享目录
+local function resolve_path(relative)
+    if not relative then return nil end
+    local user_path = rime_api.get_user_data_dir() .. "/" .. relative
+    local f = io.open(user_path, "r")
+    if f then f:close(); return user_path end
+    local shared_path = rime_api.get_shared_data_dir() .. "/" .. relative
+    f = io.open(shared_path, "r")
+    if f then f:close(); return shared_path end
+    return user_path  -- 即使不存在也返回用户路径，避免后续操作失败
+end
+
+-- 光速文件特征采样（支持多个文件）
 local function generate_files_signature(paths)
     local sig_parts = {}
     for _, path in ipairs(paths) do
@@ -45,11 +65,12 @@ local function generate_files_signature(paths)
     end
     return table.concat(sig_parts, "||")
 end
+
 -- 元数据 Key
 local META_KEY = {
     version = "wanxiang_version",
-    disabled_types = "disabled_types_fingerprint", -- 改名：配置指纹
-    files_sig = "files_signature",                 -- 用于记录物理文件的特征码
+    disabled_types = "disabled_types_fingerprint", -- 配置指纹
+    files_sig = "files_signature",                 -- 文件特征码
 }
 
 ---判断某个类型是否被禁用
@@ -60,19 +81,24 @@ function tips.is_disabled(tip)
     return tips.disabled_types[type] == true
 end
 
----从文件加载数据到 DB
-function tips.init_db_from_file(path)
-    local file = io.open(path, "r")
-    if not file then return end
-
-    for line in file:lines() do
-        -- 格式：值 [tab] 键
-        local value, key = line:match("([^\t]+)\t([^\t]+)")
-        if key and value and not tips.is_disabled(value) then
-            tips_db:update(key, value)
+---从文件加载数据到 DB（通用）
+function tips.load_data_from_files(files)
+    for _, file_path in ipairs(files) do
+        local file = io.open(file_path, "r")
+        if not file then
+            -- 文件不存在，静默跳过
+            goto continue
         end
+        for line in file:lines() do
+            -- 格式：值 [tab] 键
+            local value, key = line:match("([^\t]+)\t([^\t]+)")
+            if key and value and not tips.is_disabled(value) then
+                tips_db:update(key, value)
+            end
+        end
+        file:close()
+        ::continue::
     end
-    file:close()
 end
 
 function tips.ensure_dir_exist(dir)
@@ -88,17 +114,22 @@ end
 function tips.init(config)
     if tips.status ~= "pending" then return end
 
-    -- 1. 确保目录存在 (仅非特定发行版)
+    -- 确保目录存在 (仅非特定发行版)
     local dist = rime_api.get_distribution_code_name() or ""
     if dist ~= "hamster" and dist ~= "hamster3" and dist ~= "Weasel" then
         local user_lua_dir = rime_api.get_user_data_dir() .. "/lua"
         tips.ensure_dir_exist(user_lua_dir .. "/data")
     end
+    -- 获取自定义数据库名称并实例化，缺省为 "lua/tips"
+    local db_name = config:get_string("super_tips/db_name")
+    if not db_name or db_name == "" then
+        db_name = "lua/tips"
+    end
+    tips_db = userdb.LevelDb(db_name)
 
-    -- 2. 读取 disabled_types 配置
-    -- 这是轻量级操作，必须每次读取以生成指纹
+    -- 读取 disabled_types 配置
     local disabled_keys = {}
-    local disabled_types_list = config:get_list("tips/disabled_types")
+    local disabled_types_list = config:get_list("super_tips/disabled_types")
     if disabled_types_list then
         for i = 1, disabled_types_list.size do
             local item = disabled_types_list:get_value_at(i - 1)
@@ -108,10 +139,34 @@ function tips.init(config)
             end
         end
     end
-    table.sort(disabled_keys) -- 排序，确保指纹唯一
+    table.sort(disabled_keys)
     local current_disabled_fingerprint = table.concat(disabled_keys, "|")
-    local current_signature = generate_files_signature({tips.preset_file_path, tips.user_override_path})
-    -- 检查是否需要重建
+
+    -- 获取数据文件列表（支持 files 配置）
+    local files = {}
+    local files_list = config:get_list("super_tips/files")
+    if files_list then
+        -- 用户显式配置了文件列表
+        for i = 0, files_list.size - 1 do
+            local file_entry = files_list:get_value_at(i)
+            if file_entry and file_entry.value ~= "" then
+                local resolved = resolve_path(file_entry.value)
+                if resolved then
+                    table.insert(files, resolved)
+                end
+            end
+        end
+    end
+
+    -- 如果没有配置 files，则使用默认文件
+    if #files == 0 then
+        files = { tips.default_preset, tips.default_user }
+    end
+
+    -- 生成当前文件签名（所有文件组合）
+    local current_signature = generate_files_signature(files)
+
+    -- 打开数据库，检查是否需要重建
     tips_db:open()
     local needs_rebuild = false
 
@@ -129,7 +184,7 @@ function tips.init(config)
         end
     end
 
-    -- 检查文件是否被用户修改过
+    -- 检查文件签名
     if not needs_rebuild then
         local db_sig = tips_db:meta_fetch(META_KEY.files_sig) or ""
         if db_sig ~= current_signature then
@@ -141,8 +196,7 @@ function tips.init(config)
     if needs_rebuild then
         -- 优雅清空，防止体积膨胀
         if tips_db.clear then tips_db:clear() elseif tips_db.empty then tips_db:empty() end
-        tips.init_db_from_file(tips.preset_file_path)
-        tips.init_db_from_file(tips.user_override_path)
+        tips.load_data_from_files(files)
 
         -- 更新元数据
         tips_db:meta_update(META_KEY.version, wanxiang.version)
@@ -180,7 +234,7 @@ local function update_tips_prompt(context, env)
     
     if not context:get_option("super_tips") then return end
 
-    if not context.input or context.input == "" then  --预测数据时有候选无编码，但体验不好
+    if not context.input or context.input == "" or string.find(context.input, "^›") then
         return 
     end
 
@@ -213,9 +267,7 @@ local P = {}
 function P.init(env)
     local config = env.engine.schema.config
     tips.init(config)
-
-    P.tips_key = config:get_string("key_binder/tips_key")
-
+    P.tips_key = config:get_string("super_tips/tips_key")
     local context = env.engine.context
     env.tips_update_connection = context.update_notifier:connect(function(ctx)
         update_tips_prompt(ctx, env)
@@ -254,7 +306,6 @@ function P.func(key, env)
         context:clear()
         return wanxiang.RIME_PROCESS_RESULTS.kAccepted
     end
-
     return wanxiang.RIME_PROCESS_RESULTS.kNoop
 end
 

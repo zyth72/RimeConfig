@@ -1,5 +1,5 @@
--- @amzxyz  https://github.com/amzxyz/rime_wanxiang
--- Ctrl+1..9,0：上屏首选前 N 字；按 preedit/script_text 的前 N 音节对齐 raw input
+-- @amzxyz  https://github.com/amzxyz/rime-wanxiang
+-- Ctrl+1..9,0：上屏首选前 N 字；利用 spans 底层物理标尺精准切分 raw input
 local wanxiang = require("wanxiang/wanxiang")
 
 local M = {}
@@ -8,105 +8,14 @@ local M = {}
 local DIGIT = { [0x31]=1,[0x32]=2,[0x33]=3,[0x34]=4,[0x35]=5,[0x36]=6,[0x37]=7,[0x38]=8,[0x39]=9,[0x30]=10 }
 local KP    = { [0xFFB1]=1,[0xFFB2]=2,[0xFFB3]=3,[0xFFB4]=4,[0xFFB5]=5,[0xFFB6]=6,[0xFFB7]=7,[0xFFB8]=8,[0xFFB9]=9,[0xFFB0]=10 }
 
--- 工具：安全获取 UTF-8 字符
-local function get_utf8_char(str, index)
-    if not str or str == "" then return nil end
-    local start_byte = utf8.offset(str, index)
-    if not start_byte then return nil end
-    local end_byte = utf8.offset(str, index + 1)
-    return string.sub(str, start_byte, (end_byte and end_byte - 1) or nil)
-end
-
--- 工具：字符串缩略
-local function short(s)
-    if not s then return "" end
-    local offset = utf8.offset(s, 118)
-    if offset then
-        return s:sub(1, offset - 1) .. "..."
-    end
-    return s
-end
-
--- 工具：获取分隔符
-local function get_delimiters(ctx)
-    local cfg = ctx.engine and ctx.engine.schema and ctx.engine.schema.config
-    local delimiter = (cfg and cfg:get_string("speller/delimiter")) or " '"
-    return get_utf8_char(delimiter, 1) or " ", get_utf8_char(delimiter, 2) or "'"
-end
-
--- 放进字符类 [...] 使用的转义（只转义 % ^ ] -）
-local function esc_class(c)
-    if not c or c == "" then return "" end
-    return (c:gsub("([%%%^%]%-])", "%%%1"))
-end
-
--- 普通模式串位置的单字符转义
-local function esc_pat(s)
-    if not s or s == "" then return "" end
-    return (s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
-end
-
--- 清洗整串 raw：去掉手动分隔符
-local function clean_raw(ctx, raw)
-    if not raw or raw == "" then return "" end
-    local _, manual = get_delimiters(ctx)
-    if manual and manual ~= "" then
-        raw = raw:gsub(esc_pat(manual), "")
-    end
-    return raw
-end
-
--- 取候选前 n 个字符 (优化点：使用原生 utf8 库替代手写位运算，更安全高效)
+-- 取候选前 n 个字符
 local function utf8_head(s, n)
     if not s or s == "" or n <= 0 then return "" end
     local offset = utf8.offset(s, n + 1)
     return offset and s:sub(1, offset - 1) or s
 end
 
--- 生成 target：按分隔符切 preedit/script_text，取前 n 个并去分隔符拼接
-local function script_prefix(ctx, n)
-    local raw_in    = ctx.input or ""
-    local prop_key  = ctx:get_property("sequence_preedit_key") or ""
-    local prop_val  = ctx:get_property("sequence_preedit_val") or ""
-    local script_txt = ctx:get_script_text() or ""
-
-    local s
-    if prop_key == raw_in and prop_val ~= "" then
-        s = prop_val
-    else
-        s = script_txt
-    end
-    if s == "" then return "" end
-
-    local auto, manual = get_delimiters(ctx)
-    local pat = "[^" .. esc_class(auto) .. esc_class(manual) .. "%s]+"
-
-    local parts = {}
-    for w in s:gmatch(pat) do parts[#parts + 1] = w end
-    if #parts == 0 then return "" end
-
-    local upto = math.min(n, #parts)
-    local target = table.concat({ table.unpack(parts, 1, upto) }, "")
-    return target
-end
-
--- 对齐“去分隔符后的 raw_clean”与 target；返回消耗长度（基于 raw_clean）
-local function eat_len_by_target(ctx, target)
-    if target == "" then return 0 end
-    local raw = ctx.input or ""
-    if raw == "" then return 0 end
-    local clean = clean_raw(ctx, raw)
-    local i, j, Lc, Lt = 1, 1, #clean, #target
-    while i <= Lc and j <= Lt do
-        if clean:sub(i, i) ~= target:sub(j, j) then
-            return 0
-        end
-        i, j = i + 1, j + 1
-    end
-    if j <= Lt then return 0 end
-    return i - 1
-end
-
+-- 事务级状态挂起模块
 local function set_pending(env, rest)
     env._cpc_pending_rest = rest or ""
 end
@@ -122,6 +31,7 @@ end
 function M.init(env)
     local ctx = env.engine.context
 
+    -- 监听器：在上屏动作完成后，立刻将截断后的剩余拼音恢复到输入框
     env._cpc_update_conn = ctx.update_notifier:connect(function(c)
         if not has_pending(env) then return end
         local rest = take_pending(env) or ""
@@ -135,6 +45,7 @@ function M.init(env)
         end
     end)
 
+    -- 核心拦截器
     env._cpc_key_handler = function(key)
 
         if not key:ctrl() or key:release() then
@@ -154,25 +65,32 @@ function M.init(env)
             return wanxiang.RIME_PROCESS_RESULTS.kNoop
         end
 
+        -- 直接调用底层 spans 获取物理切分坐标
+        local spans = c.composition:spans()
+        local count = type(spans.count) == "function" and spans:count() or spans.count
+        if not spans or count == 0 then return wanxiang.RIME_PROCESS_RESULTS.kNoop end
+        
+        local vertices = type(spans.vertices) == "function" and spans:vertices() or spans.vertices
+        if not vertices or #vertices < 2 then return wanxiang.RIME_PROCESS_RESULTS.kNoop end
+
+        -- 防呆保护：取 期望长度(N)、实际拼音音节数、候选词字符数 三者中的最小值
+        local available_syllables = #vertices - 1
+        local cand_len = utf8.len(cand.text) or 0
+        n = math.min(n, available_syllables, cand_len)
+        if n <= 0 then return wanxiang.RIME_PROCESS_RESULTS.kNoop end
+        -- 获取需要上屏的中文候选字串
         local head = utf8_head(cand.text, n)
-        if head == "" then
-            return wanxiang.RIME_PROCESS_RESULTS.kNoop
+        -- 【神级一刀切】：利用 vertices 拿到第 n 个音节的精确字节偏移量
+        local cut_byte = vertices[n + 1]
+        -- 截取剩余的 raw_input
+        local rest = c.input:sub(cut_byte + 1)
+        -- 如果剩余输入首字符是手动输入的分隔符（比如 ' ），顺手切掉保证清爽
+        if rest:sub(1, 1) == "'" or rest:sub(1, 1) == " " then 
+            rest = rest:sub(2) 
         end
-
-        local target = script_prefix(c, n)
-        if target == "" then
-            return wanxiang.RIME_PROCESS_RESULTS.kNoop
-        end
-
-        local consumed = eat_len_by_target(c, target)
-        if consumed == 0 then
-            return wanxiang.RIME_PROCESS_RESULTS.kNoop
-        end
-
-        local raw_clean = clean_raw(c, c.input or "")
-        local rest = raw_clean:sub(consumed + 1)
-
+        -- 提交前 n 个字
         env.engine:commit_text(head)
+        -- 挂起剩余拼音，触发 update_notifier 恢复
         set_pending(env, rest)
         c:refresh_non_confirmed_composition()
 
