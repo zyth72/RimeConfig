@@ -58,7 +58,7 @@ jobs:
           cp -rf /tmp/config/* .
 
       - name: 生成提交信息
-        if: env.NEED_PUSH == 'true'
+        if: env.UPDATE_CONFIG == 'true'
         id: commitmsg
         run: |
           cd RimeConfig
@@ -67,7 +67,7 @@ jobs:
           echo "commit: $msg"
 
       - name: Push Main
-        if: env.NEED_PUSH == 'true'
+        if: env.UPDATE_CONFIG == 'true'
         run: |
           cd RimeConfig
           git config user.name "zyth72"
@@ -77,7 +77,7 @@ jobs:
           git push origin main
 
       - name: Push Android
-        if: env.NEED_PUSH == 'true'
+        if: env.UPDATE_CONFIG == 'true'
         run: |
           cd RimeConfig
           git fetch origin android
