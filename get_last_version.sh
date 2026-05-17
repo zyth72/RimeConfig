@@ -7,6 +7,6 @@ while read -r item; do
     if (( compare_result==2 )) then
         last_version=$tag
     fi
-done < <( cat ./tmp/releases | jq -c '.[] | select(.tag_name != "dict-nightly")')
+done < <( cat /tmp/releases | jq -c '.[] | select(.tag_name != "dict-nightly")')
 
 echo $last_version
