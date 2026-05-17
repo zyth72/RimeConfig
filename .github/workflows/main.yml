@@ -23,7 +23,7 @@ jobs:
         run: |
           cd RimeConfig
           mkdir -p tmp
-          wget https://api.github.com/repos/amzxyz/rime_wanxiang/releases -O ./tmp/releases.json
+          wget https://api.github.com/repos/amzxyz/rime_wanxiang/releases -O /tmp/releases.json
 
       - name: 比较版本
         id: version
@@ -46,61 +46,32 @@ jobs:
         if: env.UPDATE_CONFIG == 'true'
         run: |
           cd RimeConfig
-          wget https://github.com/amzxyz/rime_wanxiang/releases/download/${{ steps.version.outputs.version }}/rime-wanxiang-base.zip -O ./tmp/rime-wanxiang-base.zip
-
-      - name: 下载词库文件
-        run: |
-          cd RimeConfig
-          wget https://github.com/amzxyz/rime_wanxiang/releases/download/dict-nightly/base-dicts.zip -O ./tmp/base-dicts.zip
+          wget https://github.com/amzxyz/rime_wanxiang/releases/download/${{ steps.version.outputs.version }}/rime-wanxiang-base.zip -O /tmp/rime-wanxiang-base.zip
 
       - name: 更新配置
         if: env.UPDATE_CONFIG == 'true'
         run: |
           cd RimeConfig
-          rm -rf ./tmp/config
-          mkdir -p ./tmp/config
-          7z x ./tmp/rime-wanxiang-base.zip -o./tmp/config
-          cp -rf ./tmp/config/* .
-
-      - name: 更新词库
-        run: |
-          cd RimeConfig
-          rm -rf ./tmp/base-dicts
-          mkdir -p ./tmp/base-dicts
-          7z x ./tmp/base-dicts.zip -o./tmp/base-dicts
-          cp -rf ./tmp/base-dicts/* dicts
-
-      - name: 判断是否需要更新
-        id: check_changes
-        run: |
-          cd RimeConfig
-          if git status --porcelain | grep .; then
-            echo "NEED_PUSH=true" >> $GITHUB_ENV
-          else
-            echo "没有文件变化，不需要提交"
-          fi
+          rm -rf /tmp/config
+          mkdir -p /tmp/config
+          7z x /tmp/rime-wanxiang-base.zip -o/tmp/config
+          cp -rf /tmp/config/* .
 
       - name: 生成提交信息
         if: env.NEED_PUSH == 'true'
         id: commitmsg
         run: |
           cd RimeConfig
-
-          if [ "${UPDATE_CONFIG}" = "true" ]; then
-            msg="更新配置到 ${{ steps.version.outputs.version }} 并同步词库"
-          else
-            msg="同步最新词库"
-          fi
-
+          msg="chore: update config to ${{ steps.version.outputs.version }}"
           echo "message=$msg" >> $GITHUB_OUTPUT
-          echo "提交信息: $msg"
+          echo "commit: $msg"
 
       - name: Push Main
         if: env.NEED_PUSH == 'true'
         run: |
           cd RimeConfig
-          git config user.name "zyth3519"
-          git config user.email "zythpang@github.com"
+          git config user.name "zyth72"
+          git config user.email "zythpang@gmail.com"
           git add .
           git commit -m "${{ steps.commitmsg.outputs.message }}"
           git push origin main
@@ -111,5 +82,5 @@ jobs:
           cd RimeConfig
           git fetch origin android
           git switch android || git switch -c android --track origin/android
-          git merge main -m "合并 main"
+          git merge main -m "chore: merge main into android"
           git push origin android
