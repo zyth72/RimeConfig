@@ -2,6 +2,7 @@
 -- ⚠️ 仅用于类型提升，请勿直接 require 使用
 -- from https://github.com/hchunhui/librime-lua/blob/master/contrib/librime.lua
 -- Copyright (c) 2021, librime-lua Developers
+-- This software is licensed under the BSD-3-Clause license.
 -- Last Change: LTS
 ---@meta rime
 

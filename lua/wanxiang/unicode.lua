@@ -1,5 +1,6 @@
 -- Unicode
 -- Copyright (C) 2021 Shewer Lu <shewer@gmail.com>
+-- This file is licensed under the MIT License.
 -- amzxyz
 -- 示例：输入 U62fc 得到「拼」
 -- 触发前缀默认为 recognizer/patterns/unicode 的第 2 个字符，即 U
