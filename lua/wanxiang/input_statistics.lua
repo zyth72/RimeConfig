@@ -291,7 +291,7 @@ local function format_summary(title, subtitle, data, env)
         "  [2] %3d%% %s" .. zwsp .. "\n" ..
         "  [3] %3d%% %s" .. zwsp .. "\n" ..
         "  [4] %3d%% %s" .. zwsp .. "\n" ..
-        "  [∞] %2d%% %s" .. zwsp .. "\n" ..
+        "  [+] %2d%% %s" .. zwsp .. "\n" ..
         "───────────────" .. zwsp .. "\n" ..
         "◉ 方案：%s" .. zwsp .. "\n" ..
         "◉ 平台：%s %s" .. zwsp,

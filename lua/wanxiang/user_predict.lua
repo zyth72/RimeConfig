@@ -14,6 +14,7 @@
 -- 8. 语境隔离与时效防御 (精准识别标点断句，外加 5秒 语境超时自动熔断防穿透)
 -- 9. 语气助词智能白名单 (特许“吧呢吗”等助词接标点的合法性，实现终结符平滑解耦)
 -- 10. 跨平台双层按键防线 (针对移动端软键盘强删字节的底层特性，彻底免疫退格乱码)
+-- 11. 融合前端联动删除机制 (捕获前端发送的 delete_notifier，实现点击/手势删词同步清除数据库)
 
 local insert   = table.insert
 local remove   = table.remove
@@ -309,6 +310,28 @@ local function get_predictions(env, prev_commit)
         return cands
     end
     return nil
+end
+
+
+-- 物理按键与前端通用的删除逻辑
+local function remove_predict_candidate(env, word)
+    local db = get_db(env)
+    local exact_key = nil
+    if pending_cands then
+        for _, c in ipairs(pending_cands) do
+            if c.word == word then exact_key = c.db_key; break end
+        end
+    end
+    
+    if exact_key then
+        if db.erase then db:erase(exact_key) else db:update(exact_key, "") end
+    end
+    local chars = get_utf8_chars(last_commit)
+    local lengths = get_suffix_lengths(#chars)
+    for _, l in ipairs(lengths) do
+        local p_key = "P\t" .. table.concat(chars, "", #chars - l + 1, #chars) .. "\t" .. word
+        if db.erase then db:erase(p_key) else db:update(p_key, "") end
+    end
 end
 
 local P = {}
@@ -631,8 +654,25 @@ function P.init(env)
         end
     end
 
+    env.delete_cb = function(ctx)
+        local comp = ctx.composition
+        if not comp or comp:empty() then return end
+        
+        local seg = comp:back()
+        local idx = seg.selected_index
+        local cand = seg:get_candidate_at(idx)
+        
+        if cand and cand.type == "predict" then
+            remove_predict_candidate(env, cand.text)
+            ctx:clear()
+            -- 考虑到此时前端已经自行操作 UI 销毁了词汇，为保持一致打断记忆链
+            reset_memory_chain(env, "前端主动销毁词条")
+        end
+    end
+
     env.commit_connection = env.engine.context.commit_notifier:connect(env.commit_cb)
     env.update_connection = env.engine.context.update_notifier:connect(env.update_cb)
+    env.delete_connection = env.engine.context.delete_notifier:connect(env.delete_cb)
 end
 
 function P.func(key, env)
@@ -782,27 +822,9 @@ function P.func(key, env)
     if ctx:has_menu() and (s_find(repr, "Shift") or s_find(repr, "Control")) and (s_find(repr, "Delete") or s_find(repr, "BackSpace")) then
         local cand = ctx:get_selected_candidate()
         if cand and cand.type == "predict" then
-            local word = cand.text
-            local db = get_db(env)
-
-            local exact_key = nil
-            if pending_cands then
-                for _, c in ipairs(pending_cands) do
-                    if c.word == word then exact_key = c.db_key; break end
-                end
-            end
-            
-            if exact_key then
-                if db.erase then db:erase(exact_key) else db:update(exact_key, "") end
-            end
-            local chars = get_utf8_chars(last_commit)
-            local lengths = get_suffix_lengths(#chars)
-            for _, l in ipairs(lengths) do
-                local p_key = "P\t" .. table.concat(chars, "", #chars - l + 1, #chars) .. "\t" .. word
-                if db.erase then db:erase(p_key) else db:update(p_key, "") end
-            end
+            remove_predict_candidate(env, cand.text)
             ctx:clear()
-            reset_memory_chain(env, "物理销毁词条")
+            reset_memory_chain(env, "物理按键销毁词条")
             return 1 
         end
     end
@@ -812,6 +834,7 @@ end
 function P.fini(env)
     if env.commit_connection then env.commit_connection:disconnect(); env.commit_connection = nil end
     if env.update_connection then env.update_connection:disconnect(); env.update_connection = nil end
+    if env.delete_connection then env.delete_connection:disconnect(); env.delete_connection = nil end
 end
 
 local T = {}
