@@ -10313,6 +10313,7 @@ sort: by_weight
 疳	gān	126
 趕	gǎn	113
 坩	gān	102
+乾	gān	100
 矸	gān	92
 玕	gān	83
 扞	gǎn	75
@@ -10352,10 +10353,8 @@ sort: by_weight
 魐	gān	1
 㽏	gàn	1
 𣹟	gàn	1
-乾	gān	1
 佄	gàn	1
 咁	gān	1
-幹	gān	1
 澸	gǎn	1
 玵	gān	1
 篢	gǎn	1
@@ -14905,6 +14904,7 @@ sort: by_weight
 姬	jī	34
 脊	jǐ	32
 饥	jī	30
+𫓹	jī	21
 矶	jī	17
 稽	jī	16
 冀	jì	15
@@ -15160,7 +15160,6 @@ sort: by_weight
 㡭	jì	1
 𧐐	jī	1
 𫌀	jī	1
-𫓹	jī	1
 𬶨	jì	1
 㧀	jí	1
 鸄	jī	1
@@ -33196,8 +33195,8 @@ sort: by_weight
 𫝣	shēng	1
 𫝢	shēng	1
 是	shì	5651523
+时	shí	90160
 十	shí	10368
-时	shí	10160
 事	shì	9956
 拾	shí	3175
 使	shǐ	3016
@@ -39676,6 +39675,7 @@ sort: by_weight
 霰	xiàn	25
 顯	xiǎn	23
 见	xiàn	21
+锨	xiān	21
 祆	xiān	19
 險	xiǎn	18
 賢	xián	17
@@ -39691,7 +39691,6 @@ sort: by_weight
 憪	xián	3
 縣	xiàn	2
 餡	xiàn	1
-锨	xiān	1
 鹇	xián	1
 僊	xiān	1
 纖	xiān	1

@@ -7,6 +7,7 @@
   --enable_tone: true  #启用声调反查
 
 local wanxiang = require("wanxiang/wanxiang")
+
 local function alt_lua_punc(s)
     return s and s:gsub('([%.%+%-%*%?%[%]%^%$%(%)%%])', '%%%1') or ''
 end
@@ -449,10 +450,10 @@ function f.func(input, env)
     local comment_cache = env._global_comment_cache
 
     local fuma_chunks = {}
-    for code, digit in fuma:gmatch("(%a%a)(%d*)") do
+    for code, digit in fuma:gmatch("(%a%a?)(%d*)") do
         table.insert(fuma_chunks, string.upper(code) .. digit)
     end
-
+    
     local is_first_cand = true
     local ctx = env.engine.context
     local syllables = {}
@@ -520,7 +521,7 @@ function f.func(input, env)
                     end
                 end
             end
-            if ((cand.type == 'sentence' and cand_len > 1) or (cand.type == 'phrase' and cand_len > 2)) and #syllables >= (cand_len + syl_offset) then
+            if ((cand.type == 'sentence' and cand_len > 1) or (cand.type == 'phrase' and cand_len > 3)) and #syllables >= (cand_len + syl_offset) then
                 local current_text = cand.text
                 local corrected_count = 0
                 local match_count = 0
@@ -758,28 +759,25 @@ function f.func(input, env)
                     end
 
                     -- 最终结算上屏
-                    if match_count == #fuma_chunks then
-                        if corrected_count > 0 then
+                    if current_text ~= cand.text then
+                        if match_count == #fuma_chunks then 
                             local fixed_cand = Candidate(cand.type, cand.start, cand._end, current_text, cand.comment or "")
                             fixed_cand.quality = cand.quality
                             fixed_cand.preedit = cand.preedit
                             yield(fixed_cand)
-                        else
-                            yield(cand)
+                            goto skip
                         end
-                        goto skip
                     else
-                        yield(cand) 
-                        goto skip
+                        if match_count == #fuma_chunks then
+                            yield(cand)
+                            goto skip
+                        end
                     end
-                else
-                    yield(cand)
-                    goto skip
                 end
             end
         end
 
-        if (cand.type == 'sentence' and cand_len > 1) or (cand.type == 'phrase' and cand_len > 2) then goto skip end
+        if cand.type == 'sentence' then goto skip end
         local cand_text = cand.text
         if not cand_len or cand_len == 0 then goto skip end
         local b = string.byte(cand_text, 1)
