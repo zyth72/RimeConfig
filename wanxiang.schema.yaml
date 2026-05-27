@@ -107,10 +107,10 @@ grammar:
   language: wanxiang-lts-zh-hans
   collocation_max_length: 8
   collocation_min_length: 2
-  collocation_penalty: -15
-  non_collocation_penalty: -5
+  collocation_penalty: -16
+  non_collocation_penalty: -8
   weak_collocation_penalty: -100
-  rear_penalty: -10
+  rear_penalty: -20
 
 super_comment:                  # 超级注释模块，子项配置 true 开启，false 关闭
   candidate_length: 2           # 候选词辅助码提醒的生效长度，0为关闭  但同时清空其它，应当使用上面开关来处理
