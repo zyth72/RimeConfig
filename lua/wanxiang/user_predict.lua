@@ -555,6 +555,10 @@ function P.init(env)
     
     env.update_cb = function(ctx)
         local input = ctx.input or ""
+        if is_predicting and not s_find(input, PH_CHAR) and not env.need_push then
+            reset_memory_chain(env, "外部清空输入框")
+            ctx:clear()
+        end
         if input == "/clean" then
             ctx:clear()
             local now = os_time()

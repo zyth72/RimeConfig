@@ -697,9 +697,9 @@ function M.func(input, env)
     local lazy_cands = {}
     local top_buffer = {}
 
-    -- 第一步：提前提取简码候选，分配阵营
+        -- 处理 abbrev 规则
     for _, t in ipairs(rules) do
-        if t.mode == "abbrev" and env.input_type ~= "pinyin" then
+        if t.mode == "abbrev" then
             local is_active = false
             for _, trigger in ipairs(t.triggers) do
                 if trigger == true then is_active = true; break
@@ -713,28 +713,28 @@ function M.func(input, env)
                     if current_seg_tags[req_tag] then is_tag_match = true; break end
                 end
             end
+            
+            local query_code = input_code
+            if string.match(ctx.input, "^[a-zA-Z]+$") then
+                query_code = ctx.input
+            end
 
-            if is_active and is_tag_match and input_code ~= "" then 
-                local key = t.prefix .. input_code
-                local val = db:fetch(key) or (not s_match(input_code, "[A-Z]") and db:fetch(t.prefix .. s_upper(input_code)))
-                
+            if is_active and is_tag_match and query_code ~= "" then
+                local key = t.prefix .. query_code
+                local val = db:fetch(key) or (not s_match(query_code, "[A-Z]") and db:fetch(t.prefix .. s_upper(query_code)))
+
                 if val then
                     local count = 0
                     for p in s_gmatch(val, split_pat) do
-                        local item_text, item_preedit = parse_item(p, t.preedit_delim) 
-
+                        local item_text, item_preedit = parse_item(p, t.preedit_delim)
                         if not seen_texts[item_text] then
                             seen_texts[item_text] = true
-                            
                             local final_type = t.cand_type or "abbrev"
-                            local abbrev_cand = Candidate(final_type, seg and seg.start or 0, seg and seg._end or #input_code, item_text, "")
-                            
+                            local abbrev_cand = Candidate(final_type, seg and seg.start or 0, seg and seg._end or #ctx.input, item_text, "")
                             if item_preedit and item_preedit ~= "" then
                                 abbrev_cand.preedit = item_preedit
                             end
-
                             count = count + 1
-                            
                             if count <= t.always_qty then
                                 abbrev_cand.quality = 999
                                 insert(always_cands, { cand = abbrev_cand, index = t.always_idx + (count - 1) })
