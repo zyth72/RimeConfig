@@ -291,7 +291,6 @@ translator:
   encode_commit_history: true  # 预留历史上屏自动编码成词
   contextual_suggestions: false  #模型预测，假设模型里面有的四个字的词汇 现在智能 而首选组合 现在只能 当你输入 现在 上屏后下一次输入zhi neng就会输出，智能前提是没有权重更高的了，很明显这与你的预期“现在只能”不符。很明显实际上又要预测又要连续句子，放一起是很难优雅的。
   max_homophones: 8
-  max_homographs: 8
   core_word_length: 4          # >0 启用，按段学词 + 相邻段拼接
   max_word_length: 7           # >0 启用，过长短语不记整词，只加元素权重
   initial_quality: 3           #初始质量拼音的权重应该比英文大
@@ -457,7 +456,7 @@ grammar:
   language: wanxiang-lts-zh-hans
   collocation_max_length: 8
   collocation_min_length: 2
-  collocation_penalty: -16
-  non_collocation_penalty: -8
+  collocation_penalty: -15
+  non_collocation_penalty: -6
   weak_collocation_penalty: -100
   rear_penalty: -20

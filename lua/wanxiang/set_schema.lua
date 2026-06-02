@@ -100,6 +100,7 @@ local function translator(input, seg, env)
         ["/pyjj"]   = "拼音加加",
         ["/gbpy"]   = "国标双拼",
         ["/lxsq"]   = "乱序17",
+        ["/ltsp"]   = "蓝天双拼",
         ["/zrlong"] = "自然龙",
         ["/hxlong"] = "汉心龙",
         ["/pinyin"] = "全拼",
