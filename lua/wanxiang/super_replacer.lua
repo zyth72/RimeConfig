@@ -50,11 +50,13 @@ local function clear_map(t)
 end
 
 
--- 固定64槽运行缓存。
--- 保持 cache 对象不变，只循环覆盖内容，避免频繁创建 table。
+-- 固定64槽运行缓存：KV 跨 composition 持续保留。
+local CACHE64_SIZE = 64
+
 local function init_cache64()
     return {
-        slots = {},
+        keys = {},
+        values = {},
         lookup = {},
         index = 1,
     }
@@ -66,52 +68,44 @@ local function cache64_get(cache, key)
     local pos = cache.lookup[key]
     if not pos then return nil end
 
-    local item = cache.slots[pos]
-    if item and item.key == key then
-        return item.value
+    if cache.keys[pos] == key then
+        return cache.values[pos]
     end
 
+    -- 防御性清理：正常 ring 覆盖会同步删除旧映射，不应进入这里。
+    cache.lookup[key] = nil
     return nil
 end
 
 local function cache64_put(cache, key, value)
     if not cache or not key then return end
 
-    local index = cache.index
-    local old = cache.slots[index]
-
-    if old then
-        cache.lookup[old.key] = nil
-    end
-
-    cache.slots[index] = {
-        key = key,
-        value = value,
-    }
-
-    cache.lookup[key] = index
-
-    index = index + 1
-    if index > 64 then
-        index = 1
-    end
-
-    cache.index = index
-end
-
--- 清除缓存内容，但不替换 table。
-local function clear_cache64(cache)
-    if not cache then return end
-
-    for key in pairs(cache.lookup) do
+    -- 同一个 K 已在 ring 中时只更新 V，不推动覆盖指针。
+    local existing = cache.lookup[key]
+    if existing and cache.keys[existing] == key then
+        cache.values[existing] = value
+        return
+    elseif existing then
         cache.lookup[key] = nil
     end
 
-    for i = 1, #cache.slots do
-        cache.slots[i] = nil
+    local index = cache.index
+    local old_key = cache.keys[index]
+
+    -- 第65个不同 K 开始覆盖最老槽，并同步移除旧 K -> slot 映射。
+    if old_key ~= nil then
+        cache.lookup[old_key] = nil
     end
 
-    cache.index = 1
+    cache.keys[index] = key
+    cache.values[index] = value
+    cache.lookup[key] = index
+
+    index = index + 1
+    if index > CACHE64_SIZE then
+        index = 1
+    end
+    cache.index = index
 end
 
 -- 清空仅供单次 M.func 使用的工作缓冲；保留 table 本身供下轮复用。
@@ -713,25 +707,10 @@ end
 
 local function release_db(env)
     env.db = nil
-    -- 数据库固定为 build/replacer；这里只释放 Lua 引用，不主动关闭共享底层实例。
     collectgarbage()
 end
 
-local function clear_runtime_cache(env)
-    if not env.runtime_cache_active then return end
-
-    -- 不重新创建 cache table。
-    -- 只清除 ring buffer 内容，保留 slots/lookup 容器，避免 GC 抖动。
-    clear_cache64(env.fetch_cache)
-    clear_cache64(env.fmm_cache)
-
-    env.runtime_cache_active = false
-end
-
--- 运行期缓存只保存 string / false，不保存 Candidate 或数据库遍历对象。
 local function fetch_runtime_aggregate(env, db, key)
-    env.runtime_cache_active = true
-
     local cache = env.fetch_cache
     local cached = cache64_get(cache, key)
     if cached ~= nil then
@@ -809,8 +788,6 @@ end
 -- 简化 FMM：去掉 LRU、链表和 progress 状态机。
 -- 同一 prefix + 文本在一次 composition 内只计算一次完整结果。
 local function convert_sentence_fmm(text, db, rule, env, offsets, result_parts)
-    env.runtime_cache_active = true
-
     local prefix = rule.prefix
     local cache_key = prefix .. "\0" .. text
     local cached = cache64_get(env.fmm_cache, cache_key)
@@ -823,6 +800,11 @@ local function convert_sentence_fmm(text, db, rule, env, offsets, result_parts)
 
     local char_count = get_utf8_offsets(text, offsets)
     clear_array(result_parts)
+
+    -- FMM 的 1/2/3 字精确查询同样遵守词库实际源 key 的字节长度范围。
+    -- min/max 为 0 时视为未知，保守允许查询，避免元数据异常改变匹配结果。
+    local min_source_bytes = rule.min_source_bytes or 0
+    local max_source_bytes = rule.max_source_bytes or 0
 
     local i, result_count = 1, 0
 
@@ -838,7 +820,12 @@ local function convert_sentence_fmm(text, db, rule, env, offsets, result_parts)
             output = source
         elseif rule.single_char_only then
             source = s_sub(text, start_byte, offsets[i + 1] - 1)
-            local value = fetch_runtime_aggregate(env, db, prefix .. source)
+            local source_bytes = #source
+            local length_allowed =
+                (min_source_bytes == 0 or source_bytes >= min_source_bytes)
+                and (max_source_bytes == 0 or source_bytes <= max_source_bytes)
+            local value = length_allowed
+                and fetch_runtime_aggregate(env, db, prefix .. source) or nil
             output = first_value(value) or source
         else
             if i + FMM_LONG_MIN_CHARS - 1 <= char_count then
@@ -855,27 +842,42 @@ local function convert_sentence_fmm(text, db, rule, env, offsets, result_parts)
 
             if not output and i + 2 <= char_count then
                 local triple = s_sub(text, start_byte, offsets[i + 3] - 1)
-                local value = fetch_runtime_aggregate(env, db, prefix .. triple)
-                if value then
-                    source = triple
-                    output = first_value(value) or source
-                    step = 3
+                local source_bytes = #triple
+                if (min_source_bytes == 0 or source_bytes >= min_source_bytes)
+                    and (max_source_bytes == 0 or source_bytes <= max_source_bytes)
+                then
+                    local value = fetch_runtime_aggregate(env, db, prefix .. triple)
+                    if value then
+                        source = triple
+                        output = first_value(value) or source
+                        step = 3
+                    end
                 end
             end
 
             if not output and i + 1 <= char_count then
                 local pair = s_sub(text, start_byte, offsets[i + 2] - 1)
-                local value = fetch_runtime_aggregate(env, db, prefix .. pair)
-                if value then
-                    source = pair
-                    output = first_value(value) or source
-                    step = 2
+                local source_bytes = #pair
+                if (min_source_bytes == 0 or source_bytes >= min_source_bytes)
+                    and (max_source_bytes == 0 or source_bytes <= max_source_bytes)
+                then
+                    local value = fetch_runtime_aggregate(env, db, prefix .. pair)
+                    if value then
+                        source = pair
+                        output = first_value(value) or source
+                        step = 2
+                    end
                 end
             end
 
             if not output then
                 source = s_sub(text, start_byte, offsets[i + 1] - 1)
-                local value = fetch_runtime_aggregate(env, db, prefix .. source)
+                local source_bytes = #source
+                local length_allowed =
+                    (min_source_bytes == 0 or source_bytes >= min_source_bytes)
+                    and (max_source_bytes == 0 or source_bytes <= max_source_bytes)
+                local value = length_allowed
+                    and fetch_runtime_aggregate(env, db, prefix .. source) or nil
                 output = first_value(value) or source
             end
         end
@@ -896,7 +898,6 @@ function M.init(env)
     env.fmm_result_parts = nil
     env.fetch_cache = init_cache64()
     env.fmm_cache = init_cache64()
-    env.runtime_cache_active = false
     env.active_rules = {}
     env.active_abbrev_rules = {}
     env.result_buffer = nil
@@ -1079,36 +1080,13 @@ function M.init(env)
         merged_tasks, scheme_sigs, union_sig = nil, nil, nil
         collectgarbage("collect")
     end
-
-    local context = env.engine and env.engine.context
-    if context then
-        env.replacer_commit_connection = context.commit_notifier:connect(function()
-            clear_runtime_cache(env)
-        end)
-
-        env.replacer_update_connection = context.update_notifier:connect(function(updated_context)
-            if not updated_context:is_composing() or updated_context.input == "" then
-                clear_runtime_cache(env)
-            end
-        end)
-    end
 end
 
 function M.fini(env)
-    if env.replacer_commit_connection then
-        env.replacer_commit_connection:disconnect()
-        env.replacer_commit_connection = nil
-    end
-    if env.replacer_update_connection then
-        env.replacer_update_connection:disconnect()
-        env.replacer_update_connection = nil
-    end
-
     env.fmm_offsets = nil
     env.fmm_result_parts = nil
     env.fetch_cache = nil
     env.fmm_cache = nil
-    env.runtime_cache_active = nil
     env.active_rules = nil
     env.active_abbrev_rules = nil
     env.result_buffer = nil
@@ -1226,7 +1204,19 @@ function M.func(input, env)
             local is_multi = nil
             local exact_allowed = true
 
-            if rule.single_char_only then
+            -- 热路径长度裁剪：prefix profile 记录的是源 key 的字节长度范围。
+            -- 超出范围时完整 key 必然不存在，直接跳过同步 db:fetch()；
+            -- sentence 规则仍会继续进入 FMM，不改变分词/替换结果。
+            local query_len = #query_text
+            local min_len = rule.min_source_bytes or 0
+            local max_len = rule.max_source_bytes or 0
+            if (min_len > 0 and query_len < min_len)
+                or (max_len > 0 and query_len > max_len)
+            then
+                exact_allowed = false
+            end
+
+            if exact_allowed and rule.single_char_only then
                 is_multi = has_multiple_utf8_chars(query_text)
                 if is_multi then exact_allowed = false end
             end
