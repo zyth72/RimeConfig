@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#https://github.com/amzxyz/RIME-LMDG
+#https://github.com/amzxyz/rime-wanxiang-data
 #兼容词库，对于多字词汇两种读音的场景，手动维护到本表以及一些其他的杂项
 ---
 name: duoyin
@@ -33,6 +33,7 @@ sort: by_weight
 行子	xíng zǐ	10
 行子	hàng zi	54
 满血	mǎn xiě	386
+校时	xiào shí	76
 血肠	xiě cháng	226
 给付	jǐ fù	277
 水磨	shuǐ mó	100
@@ -42,6 +43,7 @@ sort: by_weight
 一场	yì cháng	17575
 事了	shì liǎo	337
 会得	huì dé	554
+小种	xiǎo zhǒng	34
 越长越	yuè zhǎng yuè	211
 哦哦	ò ò	1080
 吱吱	zī zī	100
